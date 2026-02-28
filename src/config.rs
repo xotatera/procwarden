@@ -92,7 +92,6 @@ pub fn save(settings: &PersistedSettings) -> anyhow::Result<()> {
 
 /// Convert from SettingsState to PersistedSettings.
 impl From<&crate::common::SettingsState> for PersistedSettings {
-    #[allow(deprecated)]
     fn from(s: &crate::common::SettingsState) -> Self {
         use crate::exemption::to_persisted_format;
 
@@ -111,13 +110,12 @@ impl From<&crate::common::SettingsState> for PersistedSettings {
                 let exemption_vec: Vec<_> = s.exemptions.iter().cloned().collect();
                 to_persisted_format(&exemption_vec)
             },
-            user_exemptions: s.user_exemptions.clone(),
+            user_exemptions: vec![], // No longer used
         }
     }
 }
 
 /// Apply persisted settings to a SettingsState.
-#[allow(deprecated)]
 pub fn apply_to(persisted: &PersistedSettings, settings: &mut crate::common::SettingsState) {
     use crate::exemption::from_persisted_format;
 
@@ -138,8 +136,6 @@ pub fn apply_to(persisted: &PersistedSettings, settings: &mut crate::common::Set
     for exemption in exemptions {
         settings.exemptions.add(exemption);
     }
-
-    settings.user_exemptions = persisted.user_exemptions.clone();
 }
 
 #[cfg(test)]

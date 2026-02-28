@@ -78,9 +78,6 @@ pub struct SettingsState {
     pub priority_guard_adaptive_sensitivity: f32,
     pub exemptions: ExemptionList,
     pub exemption_verifier: VerificationService,
-    // Deprecated: kept for backward compatibility during transition
-    #[deprecated(note = "Use exemptions field instead")]
-    pub user_exemptions: Vec<String>,
 }
 
 impl Default for SettingsState {
@@ -107,8 +104,6 @@ impl SettingsState {
             priority_guard_adaptive_sensitivity: 0.4,
             exemptions: ExemptionList::new(),
             exemption_verifier: VerificationService::new(),
-            #[allow(deprecated)]
-            user_exemptions: vec![],
         }
     }
 }

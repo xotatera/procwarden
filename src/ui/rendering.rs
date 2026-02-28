@@ -1,6 +1,3 @@
-//! UI rendering - temporary allow for deprecated fields during migration
-#![allow(deprecated)]
-
 /// Build the filter box display text.
 pub fn build_filter_content(query: &str, cursor: usize, focused: bool) -> String {
     if focused {
@@ -483,7 +480,7 @@ pub fn render_settings(f: &mut Frame, settings: &SettingsState) {
         ),
         (
             10,
-            format!("  Exemptions: [{}] ", settings.user_exemptions.len()),
+            format!("  Exemptions: [{}] ", settings.exemptions.len()),
             Some("  (processes that PriorityGuard will never demote)"),
         ),
     ];

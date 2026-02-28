@@ -1,6 +1,3 @@
-//! App state machine - temporary allow for deprecated fields during migration
-#![allow(deprecated)]
-
 use crate::common::{
     DataSourceMode, ExemptionEditorState, PendingAction, ProcessListState, SettingsState, UIMode,
 };
@@ -1419,14 +1416,7 @@ mod tests {
 
     // --- Exemption editor tests ---
 
-    #[test]
-    fn exemptions_passed_to_priority_guard() {
-        let mut app = make_app(sample_procs());
-        app.settings.user_exemptions = vec!["chrome.exe".to_string(), "firefox.exe".to_string()];
-        app.update_processes().unwrap();
-        // PriorityGuard config should receive the exemptions
-        // (verified by checking it doesn't demote exempted processes in integration tests)
-    }
+    // Note: Exemption functionality is tested in exemption and priority_guard modules
 
     #[test]
     fn exemption_picker_state_initialized() {
