@@ -82,6 +82,9 @@ pub fn handle_key(state: &mut SettingsState, key: KeyCode) {
                 9 => {
                     state.priority_guard_adaptive_sensitivity = clamp_adaptive_sensitivity(state.priority_guard_adaptive_sensitivity - 0.1);
                 }
+                10 => {
+                    // Exemptions: no Left/Right adjustment (Enter to edit in ExemptionEditor mode)
+                }
                 _ => {}
             }
         }
@@ -116,6 +119,9 @@ pub fn handle_key(state: &mut SettingsState, key: KeyCode) {
                 }
                 9 => {
                     state.priority_guard_adaptive_sensitivity = clamp_adaptive_sensitivity(state.priority_guard_adaptive_sensitivity + 0.1);
+                }
+                10 => {
+                    // Exemptions: no Left/Right adjustment (Enter to edit in ExemptionEditor mode)
                 }
                 _ => {}
             }

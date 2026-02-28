@@ -36,6 +36,7 @@ pub enum UIMode {
     Settings,
     Log,
     PriorityPicker,
+    ExemptionEditor,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +72,7 @@ pub struct SettingsState {
     pub priority_guard_ema_alpha: f32,
     pub priority_guard_grace_period_secs: u64,
     pub priority_guard_adaptive_sensitivity: f32,
+    pub user_exemptions: Vec<String>,
 }
 
 impl Default for SettingsState {
@@ -80,7 +82,7 @@ impl Default for SettingsState {
 }
 
 impl SettingsState {
-    pub const MAX_OPTION: usize = 9;
+    pub const MAX_OPTION: usize = 10;
 
     pub fn new() -> Self {
         Self {
@@ -95,6 +97,32 @@ impl SettingsState {
             priority_guard_ema_alpha: 0.3,
             priority_guard_grace_period_secs: 5,
             priority_guard_adaptive_sensitivity: 0.4,
+            user_exemptions: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExemptionEditorState {
+    pub selected: usize,
+    pub editing_new: bool,
+    pub input_buffer: String,
+    pub input_cursor: usize,
+}
+
+impl Default for ExemptionEditorState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExemptionEditorState {
+    pub fn new() -> Self {
+        Self {
+            selected: 0,
+            editing_new: false,
+            input_buffer: String::new(),
+            input_cursor: 0,
         }
     }
 }

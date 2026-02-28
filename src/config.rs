@@ -17,6 +17,7 @@ pub struct PersistedSettings {
     pub priority_guard_ema_alpha: f32,
     pub priority_guard_grace_period_secs: u64,
     pub priority_guard_adaptive_sensitivity: f32,
+    pub user_exemptions: Vec<String>,
 }
 
 impl Default for PersistedSettings {
@@ -32,6 +33,7 @@ impl Default for PersistedSettings {
             priority_guard_ema_alpha: 0.3,
             priority_guard_grace_period_secs: 5,
             priority_guard_adaptive_sensitivity: 0.4,
+            user_exemptions: vec![],
         }
     }
 }
@@ -79,6 +81,7 @@ impl From<&crate::common::SettingsState> for PersistedSettings {
             priority_guard_ema_alpha: s.priority_guard_ema_alpha,
             priority_guard_grace_period_secs: s.priority_guard_grace_period_secs,
             priority_guard_adaptive_sensitivity: s.priority_guard_adaptive_sensitivity,
+            user_exemptions: s.user_exemptions.clone(),
         }
     }
 }
@@ -95,6 +98,7 @@ pub fn apply_to(persisted: &PersistedSettings, settings: &mut crate::common::Set
     settings.priority_guard_ema_alpha = persisted.priority_guard_ema_alpha;
     settings.priority_guard_grace_period_secs = persisted.priority_guard_grace_period_secs;
     settings.priority_guard_adaptive_sensitivity = persisted.priority_guard_adaptive_sensitivity;
+    settings.user_exemptions = persisted.user_exemptions.clone();
 }
 
 #[cfg(test)]
@@ -126,6 +130,7 @@ mod tests {
             priority_guard_ema_alpha: 0.3,
             priority_guard_grace_period_secs: 5,
             priority_guard_adaptive_sensitivity: 0.0,
+            user_exemptions: vec!["chrome.exe".to_string(), "firefox.exe".to_string()],
         };
         let json = serde_json::to_string(&s).unwrap();
         let loaded: PersistedSettings = serde_json::from_str(&json).unwrap();
@@ -190,6 +195,7 @@ mod tests {
             priority_guard_ema_alpha: 0.5,
             priority_guard_grace_period_secs: 10,
             priority_guard_adaptive_sensitivity: 0.5,
+            user_exemptions: vec!["test.exe".to_string()],
         };
         let mut ss = crate::common::SettingsState::new();
         apply_to(&p, &mut ss);
@@ -212,5 +218,47 @@ mod tests {
         if let Some(p) = &path {
             assert!(p.ends_with("procwarden/settings.json") || p.ends_with("procwarden\\settings.json"));
         }
+    }
+
+    #[test]
+    fn round_trip_with_exemptions() {
+        let s = PersistedSettings {
+            poll_interval_ms: 1000,
+            hide_self: false,
+            priority_guard_enabled: true,
+            priority_guard_cpu_threshold: 70.0,
+            priority_guard_duration_secs: 3,
+            priority_guard_per_core_threshold: 95.0,
+            priority_guard_relative_multiplier: 8.0,
+            priority_guard_ema_alpha: 0.3,
+            priority_guard_grace_period_secs: 5,
+            priority_guard_adaptive_sensitivity: 0.4,
+            user_exemptions: vec!["chrome.exe".to_string(), "firefox.exe".to_string(), "blender.exe".to_string()],
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let loaded: PersistedSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.user_exemptions.len(), 3);
+        assert_eq!(loaded.user_exemptions[0], "chrome.exe");
+        assert_eq!(loaded.user_exemptions[1], "firefox.exe");
+        assert_eq!(loaded.user_exemptions[2], "blender.exe");
+    }
+
+    #[test]
+    fn backward_compat_missing_exemptions() {
+        // Old settings.json without user_exemptions field should default to empty vec
+        let json = r#"{
+            "poll_interval_ms": 2000,
+            "hide_self": false,
+            "priority_guard_enabled": true,
+            "priority_guard_cpu_threshold": 65.0,
+            "priority_guard_duration_secs": 2,
+            "priority_guard_per_core_threshold": 95.0,
+            "priority_guard_relative_multiplier": 8.0,
+            "priority_guard_ema_alpha": 0.3,
+            "priority_guard_grace_period_secs": 5,
+            "priority_guard_adaptive_sensitivity": 0.4
+        }"#;
+        let s: PersistedSettings = serde_json::from_str(json).unwrap();
+        assert!(s.user_exemptions.is_empty());
     }
 }

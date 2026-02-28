@@ -23,7 +23,7 @@ use ratatui::{
     Frame,
 };
 use std::collections::HashSet;
-use crate::common::{UIMode, PendingAction, ProcessListState, SettingsState, DataSourceMode};
+use crate::common::{UIMode, PendingAction, ProcessListState, SettingsState, DataSourceMode, ExemptionEditorState};
 use crate::process_list::get_column_header;
 use crate::settings::get_hide_self_status;
 use crate::priority_guard::windows_api::PRIORITY_CLASSES;
@@ -43,6 +43,7 @@ pub struct ActionState<'a> {
     pub pending_action: &'a Option<PendingAction>,
     pub suspended_pids: &'a HashSet<u32>,
     pub priority_picker_selected: usize,
+    pub exemption_editor: &'a ExemptionEditorState,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -63,6 +64,10 @@ pub fn render_ui(
         UIMode::PriorityPicker => {
             render_process_list(f, process_state, data_source_mode, pg_status, action_state.pending_action, action_state.suspended_pids);
             render_priority_picker(f, process_state, action_state.priority_picker_selected);
+        }
+        UIMode::ExemptionEditor => {
+            render_settings(f, settings);
+            render_exemption_editor(f, settings, action_state.exemption_editor);
         }
     }
 }
@@ -334,6 +339,8 @@ pub fn render_settings(f: &mut Frame, settings: &SettingsState) {
             Some("  (ignore newly launched processes for this duration)")),
         (9, format!("  Adaptive Sensitivity: {} ", adaptive_display),
             Some("  (0 = off, higher = more aggressive load-based scaling)")),
+        (10, format!("  Exemptions: [{}] ", settings.user_exemptions.len()),
+            Some("  (processes that PriorityGuard will never demote)")),
     ];
 
     for (idx, label, hint) in options {
@@ -358,7 +365,7 @@ pub fn render_settings(f: &mut Frame, settings: &SettingsState) {
             lines.push(Line::from(*hint_text));
         }
         // Don't add trailing blank after last option
-        if *idx < 9 {
+        if *idx < 10 {
             lines.push(Line::from(""));
         }
     }
@@ -375,6 +382,8 @@ pub fn render_settings(f: &mut Frame, settings: &SettingsState) {
             Span::styled("↑↓", Style::default().fg(Color::Cyan)),
             Span::raw(" | Adjust: "),
             Span::styled("←→", Style::default().fg(Color::Cyan)),
+            Span::raw(" | Edit: "),
+            Span::styled("Enter", Style::default().fg(Color::Cyan)),
             Span::raw(" | Close: "),
             Span::styled("s/ESC", Style::default().fg(Color::Cyan)),
             Span::raw(" | Quit: "),
@@ -503,6 +512,96 @@ fn render_priority_picker(f: &mut Frame, state: &ProcessListState, selected: usi
             .border_style(Style::default().fg(Color::Magenta)))
         .style(Style::default().fg(Color::White));
     f.render_widget(picker, popup_area);
+}
+
+fn render_exemption_editor(f: &mut Frame, settings: &SettingsState, editor_state: &ExemptionEditorState) {
+    let area = f.area();
+    let popup_width = 60u16;
+    let popup_height = 20u16;
+    let x = area.width.saturating_sub(popup_width) / 2;
+    let y = area.height.saturating_sub(popup_height) / 2;
+    let popup_area = ratatui::layout::Rect::new(x, y, popup_width.min(area.width), popup_height.min(area.height));
+
+    // Clear background
+    f.render_widget(ratatui::widgets::Clear, popup_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints(
+            [
+                Constraint::Min(5),
+                Constraint::Length(3),
+                Constraint::Length(3),
+            ]
+            .as_ref(),
+        )
+        .split(popup_area);
+
+    // Exemption list
+    let mut lines: Vec<Line> = Vec::new();
+    if settings.user_exemptions.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  No exemptions. Press 'a' to add process name.",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (i, exemption) in settings.user_exemptions.iter().enumerate() {
+            let line = if i == editor_state.selected && !editor_state.editing_new {
+                Line::from(Span::styled(
+                    format!("  > {} ", exemption),
+                    Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ))
+            } else {
+                Line::from(format!("    {} ", exemption))
+            };
+            lines.push(line);
+        }
+    }
+
+    let list_widget = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("PriorityGuard Exemptions")
+            .border_style(Style::default().fg(Color::Magenta)))
+        .style(Style::default().fg(Color::White));
+    f.render_widget(list_widget, chunks[0]);
+
+    // Input box (when adding new exemption)
+    if editor_state.editing_new {
+        let (before, after) = editor_state.input_buffer.split_at(editor_state.input_cursor);
+        let input_content = format!("{}|{}", before, after);
+        let input_widget = Paragraph::new(input_content)
+            .style(Style::default().fg(Color::White))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Add Exemption (Enter to save, Esc to cancel)")
+                    .border_style(Style::default().fg(Color::Cyan)),
+            );
+        f.render_widget(input_widget, chunks[1]);
+    } else {
+        let input_widget = Paragraph::new("")
+            .block(Block::default().borders(Borders::ALL).title("Add Exemption"));
+        f.render_widget(input_widget, chunks[1]);
+    }
+
+    // Help text
+    let help_lines = vec![
+        Line::from(vec![
+            Span::styled("↑↓", Style::default().fg(Color::Cyan)),
+            Span::raw(" Nav  "),
+            Span::styled("Del/x", Style::default().fg(Color::Red)),
+            Span::raw(" Remove  "),
+            Span::styled("a/Enter", Style::default().fg(Color::Green)),
+            Span::raw(" Add  "),
+            Span::styled("e/ESC", Style::default().fg(Color::Cyan)),
+            Span::raw(" Back"),
+        ]),
+    ];
+    let help = Paragraph::new(help_lines)
+        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(help, chunks[2]);
 }
 
 /// Build confirmation prompt text for a pending action (pure function for testing).

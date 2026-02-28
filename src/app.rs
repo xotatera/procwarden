@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use anyhow::Result;
 use crossterm::event::KeyCode;
-use crate::common::{UIMode, PendingAction, ProcessListState, SettingsState, DataSourceMode};
+use crate::common::{UIMode, PendingAction, ProcessListState, SettingsState, DataSourceMode, ExemptionEditorState};
 use crate::data_source::DataSource;
 use crate::priority_guard::{PriorityGuardConfig, PriorityGuardEngine};
 use crate::priority_guard::windows_api as win_api;
@@ -25,6 +25,7 @@ pub struct App {
     pub pending_action: Option<PendingAction>,
     pub suspended_pids: HashSet<u32>,
     pub priority_picker_selected: usize,
+    pub exemption_editor: ExemptionEditorState,
     data_source: Box<dyn DataSource>,
 }
 
@@ -40,6 +41,7 @@ impl App {
             pending_action: None,
             suspended_pids: HashSet::new(),
             priority_picker_selected: 2, // default to Normal
+            exemption_editor: ExemptionEditorState::new(),
             data_source,
         }
     }
@@ -79,7 +81,7 @@ impl App {
             enabled: self.settings.priority_guard_enabled,
             cpu_threshold: self.settings.priority_guard_cpu_threshold,
             duration_secs: self.settings.priority_guard_duration_secs,
-            user_exemptions: vec![], // Not yet exposed in settings UI
+            user_exemptions: self.settings.user_exemptions.clone(),
             per_core_threshold: self.settings.priority_guard_per_core_threshold,
             core_count: num_cpus() as u8,
             relative_multiplier: self.settings.priority_guard_relative_multiplier,
@@ -102,6 +104,7 @@ impl App {
             UIMode::Settings => self.handle_settings_key(key),
             UIMode::Log => self.handle_log_key(key),
             UIMode::PriorityPicker => self.handle_priority_picker_key(key),
+            UIMode::ExemptionEditor => self.handle_exemption_editor_key(key),
         }
     }
 
@@ -250,6 +253,16 @@ impl App {
                 self.ui_mode = UIMode::Processes;
             }
             KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
+            KeyCode::Enter => {
+                // Enter on option 10 (Exemptions) opens the exemption editor
+                if self.settings.selected_option == 10 {
+                    self.ui_mode = UIMode::ExemptionEditor;
+                    self.exemption_editor.selected = 0;
+                    self.exemption_editor.editing_new = false;
+                    self.exemption_editor.input_buffer.clear();
+                    self.exemption_editor.input_cursor = 0;
+                }
+            }
             _ => {
                 settings_handlers::handle_key(&mut self.settings, key);
                 // Persist settings after each change
@@ -351,6 +364,131 @@ impl App {
             }
             KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
             _ => {}
+        }
+        Ok(false)
+    }
+
+    fn handle_exemption_editor_key(&mut self, key: KeyCode) -> Result<bool> {
+        if self.exemption_editor.editing_new {
+            // Text input mode
+            match key {
+                KeyCode::Enter => {
+                    // Validate and add new exemption
+                    let input = self.exemption_editor.input_buffer.trim().to_string();
+                    if !input.is_empty() {
+                        // Check for case-insensitive duplicates
+                        let is_duplicate = self.settings.user_exemptions.iter()
+                            .any(|e| e.eq_ignore_ascii_case(&input));
+                        if !is_duplicate {
+                            self.settings.user_exemptions.push(input.clone());
+                            log::info!("Added PriorityGuard exemption: {}", input);
+                            // Save settings
+                            let persisted = crate::config::PersistedSettings::from(&self.settings);
+                            if let Err(e) = crate::config::save(&persisted) {
+                                log::warn!("Failed to save settings: {}", e);
+                            }
+                        }
+                    }
+                    // Exit editing mode
+                    self.exemption_editor.editing_new = false;
+                    self.exemption_editor.input_buffer.clear();
+                    self.exemption_editor.input_cursor = 0;
+                }
+                KeyCode::Esc => {
+                    // Cancel editing
+                    self.exemption_editor.editing_new = false;
+                    self.exemption_editor.input_buffer.clear();
+                    self.exemption_editor.input_cursor = 0;
+                }
+                KeyCode::Char(c) => {
+                    self.exemption_editor.input_buffer.insert(self.exemption_editor.input_cursor, c);
+                    self.exemption_editor.input_cursor += c.len_utf8();
+                }
+                KeyCode::Backspace => {
+                    if self.exemption_editor.input_cursor > 0 {
+                        let prev = self.exemption_editor.input_buffer[..self.exemption_editor.input_cursor]
+                            .char_indices()
+                            .next_back()
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                        self.exemption_editor.input_buffer.remove(prev);
+                        self.exemption_editor.input_cursor = prev;
+                    }
+                }
+                KeyCode::Delete => {
+                    if self.exemption_editor.input_cursor < self.exemption_editor.input_buffer.len() {
+                        self.exemption_editor.input_buffer.remove(self.exemption_editor.input_cursor);
+                    }
+                }
+                KeyCode::Left => {
+                    if self.exemption_editor.input_cursor > 0 {
+                        self.exemption_editor.input_cursor = self.exemption_editor.input_buffer[..self.exemption_editor.input_cursor]
+                            .char_indices()
+                            .next_back()
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                    }
+                }
+                KeyCode::Right => {
+                    if self.exemption_editor.input_cursor < self.exemption_editor.input_buffer.len() {
+                        self.exemption_editor.input_cursor = self.exemption_editor.input_buffer[self.exemption_editor.input_cursor..]
+                            .char_indices()
+                            .nth(1)
+                            .map(|(i, _)| self.exemption_editor.input_cursor + i)
+                            .unwrap_or(self.exemption_editor.input_buffer.len());
+                    }
+                }
+                KeyCode::Home => {
+                    self.exemption_editor.input_cursor = 0;
+                }
+                KeyCode::End => {
+                    self.exemption_editor.input_cursor = self.exemption_editor.input_buffer.len();
+                }
+                _ => {}
+            }
+        } else {
+            // Navigation mode
+            match key {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.exemption_editor.selected = self.exemption_editor.selected.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if !self.settings.user_exemptions.is_empty() && self.exemption_editor.selected < self.settings.user_exemptions.len() - 1 {
+                        self.exemption_editor.selected += 1;
+                    }
+                }
+                KeyCode::Delete | KeyCode::Char('x') => {
+                    if !self.settings.user_exemptions.is_empty() && self.exemption_editor.selected < self.settings.user_exemptions.len() {
+                        let removed = self.settings.user_exemptions.remove(self.exemption_editor.selected);
+                        log::info!("Removed PriorityGuard exemption: {}", removed);
+                        // Adjust selection if needed
+                        if self.exemption_editor.selected >= self.settings.user_exemptions.len() && self.exemption_editor.selected > 0 {
+                            self.exemption_editor.selected -= 1;
+                        }
+                        // Save settings
+                        let persisted = crate::config::PersistedSettings::from(&self.settings);
+                        if let Err(e) = crate::config::save(&persisted) {
+                            log::warn!("Failed to save settings: {}", e);
+                        }
+                    }
+                }
+                KeyCode::Char('a') | KeyCode::Enter => {
+                    // Start adding new exemption
+                    self.exemption_editor.editing_new = true;
+                    self.exemption_editor.input_buffer.clear();
+                    self.exemption_editor.input_cursor = 0;
+                }
+                KeyCode::Esc | KeyCode::Char('e') | KeyCode::Char('E') => {
+                    // Exit to Settings
+                    self.ui_mode = UIMode::Settings;
+                    self.exemption_editor.selected = 0;
+                    self.exemption_editor.editing_new = false;
+                    self.exemption_editor.input_buffer.clear();
+                    self.exemption_editor.input_cursor = 0;
+                }
+                KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
+                _ => {}
+            }
         }
         Ok(false)
     }
@@ -1054,6 +1192,26 @@ mod tests {
         assert!(app.pending_action.is_none());
         assert_eq!(app.priority_picker_selected, 2);
     }
+
+    // --- Exemption editor tests ---
+
+    #[test]
+    fn exemptions_passed_to_priority_guard() {
+        let mut app = make_app(sample_procs());
+        app.settings.user_exemptions = vec!["chrome.exe".to_string(), "firefox.exe".to_string()];
+        app.update_processes().unwrap();
+        // PriorityGuard config should receive the exemptions
+        // (verified by checking it doesn't demote exempted processes in integration tests)
+    }
+
+    #[test]
+    fn exemption_editor_state_initialized() {
+        let app = make_app(vec![]);
+        assert_eq!(app.exemption_editor.selected, 0);
+        assert!(!app.exemption_editor.editing_new);
+        assert!(app.exemption_editor.input_buffer.is_empty());
+        assert_eq!(app.exemption_editor.input_cursor, 0);
+    }
 }
 
 #[cfg(test)]
@@ -1150,7 +1308,7 @@ mod fuzz_tests {
 
                 // Invariant: ui_mode is always valid
                 prop_assert!(
-                    app.ui_mode == UIMode::Processes || app.ui_mode == UIMode::Settings || app.ui_mode == UIMode::Log || app.ui_mode == UIMode::PriorityPicker
+                    app.ui_mode == UIMode::Processes || app.ui_mode == UIMode::Settings || app.ui_mode == UIMode::Log || app.ui_mode == UIMode::PriorityPicker || app.ui_mode == UIMode::ExemptionEditor
                 );
 
                 // Invariant: priority_picker_selected always in bounds

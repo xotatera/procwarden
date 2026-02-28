@@ -94,6 +94,7 @@ fn run_app(
                     pending_action: &app.pending_action,
                     suspended_pids: &app.suspended_pids,
                     priority_picker_selected: app.priority_picker_selected,
+                    exemption_editor: &app.exemption_editor,
                 };
                 render_ui(f, app.ui_mode, &mut app.process_list, &app.settings, app.data_source_mode, &pg_status, app.log_scroll_offset, &action_state);
             })?;
