@@ -3,6 +3,9 @@ use crate::exemption::{ExemptionList, VerificationService};
 use ratatui::widgets::TableState;
 use std::collections::HashMap;
 
+// Re-export ExemptionPickerState as ExemptionEditorState for backward compatibility
+pub use crate::exemption::ExemptionPickerState as ExemptionEditorState;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortColumn {
     Pid,
@@ -110,30 +113,7 @@ impl SettingsState {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ExemptionEditorState {
-    pub selected: usize,
-    pub editing_new: bool,
-    pub input_buffer: String,
-    pub input_cursor: usize,
-}
-
-impl Default for ExemptionEditorState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ExemptionEditorState {
-    pub fn new() -> Self {
-        Self {
-            selected: 0,
-            editing_new: false,
-            input_buffer: String::new(),
-            input_cursor: 0,
-        }
-    }
-}
+// ExemptionEditorState has been replaced by ExemptionPickerState (re-exported above)
 
 /// Pre-formatted row cells for rendering (avoids per-frame allocations).
 pub type FormattedRow = [String; 5]; // pid, name, cpu, memory, cpu_rel

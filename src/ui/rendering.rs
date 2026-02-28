@@ -688,9 +688,11 @@ fn render_exemption_editor(
     settings: &SettingsState,
     editor_state: &ExemptionEditorState,
 ) {
+    use crate::exemption::PickerTab;
+
     let area = f.area();
-    let popup_width = 60u16;
-    let popup_height = 20u16;
+    let popup_width = 80u16;
+    let popup_height = 25u16;
     let x = area.width.saturating_sub(popup_width) / 2;
     let y = area.height.saturating_sub(popup_height) / 2;
     let popup_area = ratatui::layout::Rect::new(
@@ -708,88 +710,222 @@ fn render_exemption_editor(
         .margin(1)
         .constraints(
             [
-                Constraint::Min(5),
-                Constraint::Length(3),
-                Constraint::Length(3),
+                Constraint::Length(1), // Tab headers
+                Constraint::Length(1), // Current exemptions count
+                Constraint::Min(10),   // Main content
+                Constraint::Length(3), // Help text
             ]
             .as_ref(),
         )
         .split(popup_area);
 
-    // Exemption list
-    let mut lines: Vec<Line> = Vec::new();
-    if settings.user_exemptions.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "  No exemptions. Press 'a' to add process name.",
-            Style::default().fg(Color::DarkGray),
-        )));
-    } else {
-        for (i, exemption) in settings.user_exemptions.iter().enumerate() {
-            let line = if i == editor_state.selected && !editor_state.editing_new {
-                Line::from(Span::styled(
-                    format!("  > {} ", exemption),
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ))
-            } else {
-                Line::from(format!("    {} ", exemption))
+    // Tab headers
+    let tab_titles = [
+        PickerTab::RunningProcesses.label(),
+        PickerTab::Browse.label(),
+        PickerTab::ManualEntry.label(),
+    ];
+    let tab_spans: Vec<Span> = tab_titles
+        .iter()
+        .enumerate()
+        .flat_map(|(i, &title)| {
+            let tab_idx = match i {
+                0 => PickerTab::RunningProcesses,
+                1 => PickerTab::Browse,
+                _ => PickerTab::ManualEntry,
             };
-            lines.push(line);
+            let is_active = editor_state.active_tab == tab_idx;
+            let style = if is_active {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            vec![Span::styled(format!(" {} ", title), style), Span::raw(" ")]
+        })
+        .collect();
+    let tabs = Paragraph::new(Line::from(tab_spans));
+    f.render_widget(tabs, chunks[0]);
+
+    // Current exemptions count
+    let exemption_count = settings.exemptions.len();
+    let count_text = if exemption_count == 0 {
+        "No exemptions configured".to_string()
+    } else if exemption_count == 1 {
+        "1 exemption configured".to_string()
+    } else {
+        format!("{} exemptions configured", exemption_count)
+    };
+    let count_widget = Paragraph::new(count_text)
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Center);
+    f.render_widget(count_widget, chunks[1]);
+
+    // Main content area based on active tab
+    let content_area = chunks[2];
+    match editor_state.active_tab {
+        PickerTab::RunningProcesses => {
+            render_running_processes_tab(f, content_area, editor_state);
+        }
+        PickerTab::Browse => {
+            render_browse_tab(f, content_area);
+        }
+        PickerTab::ManualEntry => {
+            render_manual_entry_tab(f, content_area, editor_state);
         }
     }
 
-    let list_widget = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("PriorityGuard Exemptions")
-                .border_style(Style::default().fg(Color::Magenta)),
-        )
-        .style(Style::default().fg(Color::White));
-    f.render_widget(list_widget, chunks[0]);
-
-    // Input box (when adding new exemption)
-    if editor_state.editing_new {
-        let (before, after) = editor_state
-            .input_buffer
-            .split_at(editor_state.input_cursor);
-        let input_content = format!("{}|{}", before, after);
-        let input_widget = Paragraph::new(input_content)
-            .style(Style::default().fg(Color::White))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Add Exemption (Enter to save, Esc to cancel)")
-                    .border_style(Style::default().fg(Color::Cyan)),
-            );
-        f.render_widget(input_widget, chunks[1]);
-    } else {
-        let input_widget = Paragraph::new("").block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Add Exemption"),
-        );
-        f.render_widget(input_widget, chunks[1]);
-    }
-
-    // Help text
-    let help_lines = vec![Line::from(vec![
-        Span::styled("↑↓", Style::default().fg(Color::Cyan)),
-        Span::raw(" Nav  "),
-        Span::styled("Del/x", Style::default().fg(Color::Red)),
-        Span::raw(" Remove  "),
-        Span::styled("a/Enter", Style::default().fg(Color::Green)),
-        Span::raw(" Add  "),
-        Span::styled("e/ESC", Style::default().fg(Color::Cyan)),
-        Span::raw(" Back"),
-    ])];
-    let help = Paragraph::new(help_lines)
+    // Help text based on active tab
+    let help_spans: Vec<Span> = match editor_state.active_tab {
+        PickerTab::RunningProcesses => vec![
+            Span::styled("Tab", Style::default().fg(Color::Yellow)),
+            Span::raw(" Switch  "),
+            Span::styled("↑↓", Style::default().fg(Color::Cyan)),
+            Span::raw(" Nav  "),
+            Span::styled("Enter", Style::default().fg(Color::Green)),
+            Span::raw(" Add  "),
+            Span::styled("r", Style::default().fg(Color::Cyan)),
+            Span::raw(" Refresh  "),
+            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::raw(" Back"),
+        ],
+        PickerTab::Browse => vec![
+            Span::styled("Tab", Style::default().fg(Color::Yellow)),
+            Span::raw(" Switch  "),
+            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::raw(" Back  "),
+            Span::styled("(Coming soon)", Style::default().fg(Color::DarkGray)),
+        ],
+        PickerTab::ManualEntry => vec![
+            Span::styled("Tab", Style::default().fg(Color::Yellow)),
+            Span::raw(" Switch  "),
+            Span::styled("Enter", Style::default().fg(Color::Green)),
+            Span::raw(" Add  "),
+            Span::styled("Esc", Style::default().fg(Color::Red)),
+            Span::raw(" Back"),
+        ],
+    };
+    let help = Paragraph::new(Line::from(help_spans))
         .style(Style::default().fg(Color::Gray))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
-    f.render_widget(help, chunks[2]);
+    f.render_widget(help, chunks[3]);
+}
+
+fn render_running_processes_tab(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    editor_state: &ExemptionEditorState,
+) {
+    let mut lines: Vec<Line> = Vec::new();
+    if editor_state.running_candidates.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  No running processes with valid exe paths found.",
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  Press 'r' to refresh.",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (i, candidate) in editor_state.running_candidates.iter().enumerate() {
+            let is_selected = i == editor_state.running_selected;
+            let text = if is_selected {
+                format!("  > {} (PID: {})", candidate.name, candidate.pid)
+            } else {
+                format!("    {} (PID: {})", candidate.name, candidate.pid)
+            };
+            let style = if is_selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            lines.push(Line::from(Span::styled(text, style)));
+
+            // Show full path for selected item
+            if is_selected {
+                lines.push(Line::from(Span::styled(
+                    format!("    Path: {}", candidate.path.display()),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+        }
+    }
+
+    let widget = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Running Processes")
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .style(Style::default().fg(Color::White));
+    f.render_widget(widget, area);
+}
+
+fn render_browse_tab(f: &mut Frame, area: ratatui::layout::Rect) {
+    let text = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  File browser coming in next phase.",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "  Use Manual Entry tab for now.",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+    let widget = Paragraph::new(text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Browse Filesystem")
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .alignment(Alignment::Center);
+    f.render_widget(widget, area);
+}
+
+fn render_manual_entry_tab(
+    f: &mut Frame,
+    area: ratatui::layout::Rect,
+    editor_state: &ExemptionEditorState,
+) {
+    let (before, after) = editor_state
+        .manual_input
+        .split_at(editor_state.manual_cursor);
+    let input_content = format!("{}|{}", before, after);
+
+    let text = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Enter full path to executable:",
+            Style::default().fg(Color::White),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  {}", input_content),
+            Style::default().fg(Color::Cyan),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Example: C:\\\\Program Files\\\\MyApp\\\\app.exe",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    let widget = Paragraph::new(text).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Manual Entry")
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+    f.render_widget(widget, area);
 }
 
 /// Build confirmation prompt text for a pending action (pure function for testing).

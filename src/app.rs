@@ -307,13 +307,13 @@ impl App {
             }
             KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
             KeyCode::Enter => {
-                // Enter on option 10 (Exemptions) opens the exemption editor
+                // Enter on option 10 (Exemptions) opens the exemption picker
                 if self.settings.selected_option == 10 {
                     self.ui_mode = UIMode::ExemptionEditor;
-                    self.exemption_editor.selected = 0;
-                    self.exemption_editor.editing_new = false;
-                    self.exemption_editor.input_buffer.clear();
-                    self.exemption_editor.input_cursor = 0;
+                    // Refresh running process candidates when opening picker
+                    self.exemption_editor
+                        .refresh_candidates(&self.process_list.processes);
+                    self.exemption_editor.reset();
                 }
             }
             _ => {
@@ -442,147 +442,182 @@ impl App {
     }
 
     fn handle_exemption_editor_key(&mut self, key: KeyCode) -> Result<bool> {
-        if self.exemption_editor.editing_new {
-            // Text input mode
-            match key {
-                KeyCode::Enter => {
-                    // Validate and add new exemption
-                    let input = self.exemption_editor.input_buffer.trim().to_string();
-                    if !input.is_empty() {
-                        // Check for case-insensitive duplicates
-                        let is_duplicate = self
-                            .settings
-                            .user_exemptions
-                            .iter()
-                            .any(|e| e.eq_ignore_ascii_case(&input));
-                        if !is_duplicate {
-                            self.settings.user_exemptions.push(input.clone());
-                            log::info!("Added PriorityGuard exemption: {}", input);
-                            // Save settings
-                            let persisted = crate::config::PersistedSettings::from(&self.settings);
-                            if let Err(e) = crate::config::save(&persisted) {
-                                log::warn!("Failed to save settings: {}", e);
+        use crate::exemption::{hash_file_dual, Exemption, PickerTab};
+
+        // Tab switching works across all tabs
+        if key == KeyCode::Tab {
+            self.exemption_editor.switch_tab();
+            return Ok(false);
+        }
+
+        match self.exemption_editor.active_tab {
+            PickerTab::RunningProcesses => {
+                match key {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.exemption_editor.navigate_up();
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.exemption_editor.navigate_down();
+                    }
+                    KeyCode::Enter => {
+                        // Add selected process as exemption
+                        if let Some(candidate) = self.exemption_editor.selected_candidate() {
+                            let path = candidate.path.clone();
+                            match hash_file_dual(&path) {
+                                Ok((sha256, blake3)) => {
+                                    let exemption = Exemption::new(path.clone(), sha256, blake3);
+                                    self.settings.exemptions.add(exemption.clone());
+                                    log::info!(
+                                        "Added PriorityGuard exemption: {} ({})",
+                                        exemption.display_name,
+                                        path.display()
+                                    );
+                                    // Save settings
+                                    let persisted =
+                                        crate::config::PersistedSettings::from(&self.settings);
+                                    if let Err(e) = crate::config::save(&persisted) {
+                                        log::warn!("Failed to save settings: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to hash file {}: {}", path.display(), e);
+                                }
                             }
                         }
                     }
-                    // Exit editing mode
-                    self.exemption_editor.editing_new = false;
-                    self.exemption_editor.input_buffer.clear();
-                    self.exemption_editor.input_cursor = 0;
-                }
-                KeyCode::Esc => {
-                    // Cancel editing
-                    self.exemption_editor.editing_new = false;
-                    self.exemption_editor.input_buffer.clear();
-                    self.exemption_editor.input_cursor = 0;
-                }
-                KeyCode::Char(c) => {
-                    self.exemption_editor
-                        .input_buffer
-                        .insert(self.exemption_editor.input_cursor, c);
-                    self.exemption_editor.input_cursor += c.len_utf8();
-                }
-                KeyCode::Backspace => {
-                    if self.exemption_editor.input_cursor > 0 {
-                        let prev = self.exemption_editor.input_buffer
-                            [..self.exemption_editor.input_cursor]
-                            .char_indices()
-                            .next_back()
-                            .map(|(i, _)| i)
-                            .unwrap_or(0);
-                        self.exemption_editor.input_buffer.remove(prev);
-                        self.exemption_editor.input_cursor = prev;
-                    }
-                }
-                KeyCode::Delete => {
-                    if self.exemption_editor.input_cursor < self.exemption_editor.input_buffer.len()
-                    {
+                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                        // Refresh running process list
                         self.exemption_editor
-                            .input_buffer
-                            .remove(self.exemption_editor.input_cursor);
+                            .refresh_candidates(&self.process_list.processes);
                     }
-                }
-                KeyCode::Left => {
-                    if self.exemption_editor.input_cursor > 0 {
-                        self.exemption_editor.input_cursor = self.exemption_editor.input_buffer
-                            [..self.exemption_editor.input_cursor]
-                            .char_indices()
-                            .next_back()
-                            .map(|(i, _)| i)
-                            .unwrap_or(0);
+                    KeyCode::Esc | KeyCode::Char('e') | KeyCode::Char('E') => {
+                        // Exit to Settings
+                        self.ui_mode = UIMode::Settings;
                     }
+                    KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
+                    _ => {}
                 }
-                KeyCode::Right => {
-                    if self.exemption_editor.input_cursor < self.exemption_editor.input_buffer.len()
-                    {
-                        self.exemption_editor.input_cursor = self.exemption_editor.input_buffer
-                            [self.exemption_editor.input_cursor..]
-                            .char_indices()
-                            .nth(1)
-                            .map(|(i, _)| self.exemption_editor.input_cursor + i)
-                            .unwrap_or(self.exemption_editor.input_buffer.len());
-                    }
-                }
-                KeyCode::Home => {
-                    self.exemption_editor.input_cursor = 0;
-                }
-                KeyCode::End => {
-                    self.exemption_editor.input_cursor = self.exemption_editor.input_buffer.len();
-                }
-                _ => {}
             }
-        } else {
-            // Navigation mode
-            match key {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.exemption_editor.selected =
-                        self.exemption_editor.selected.saturating_sub(1);
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if !self.settings.user_exemptions.is_empty()
-                        && self.exemption_editor.selected < self.settings.user_exemptions.len() - 1
-                    {
-                        self.exemption_editor.selected += 1;
+            PickerTab::Browse => {
+                // TODO: Implement file browser navigation in next phase
+                match key {
+                    KeyCode::Esc | KeyCode::Char('e') | KeyCode::Char('E') => {
+                        self.ui_mode = UIMode::Settings;
                     }
+                    KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
+                    _ => {}
                 }
-                KeyCode::Delete | KeyCode::Char('x') => {
-                    if !self.settings.user_exemptions.is_empty()
-                        && self.exemption_editor.selected < self.settings.user_exemptions.len()
-                    {
-                        let removed = self
-                            .settings
-                            .user_exemptions
-                            .remove(self.exemption_editor.selected);
-                        log::info!("Removed PriorityGuard exemption: {}", removed);
-                        // Adjust selection if needed
-                        if self.exemption_editor.selected >= self.settings.user_exemptions.len()
-                            && self.exemption_editor.selected > 0
+            }
+            PickerTab::ManualEntry => {
+                match key {
+                    KeyCode::Enter => {
+                        // Validate and add manual path
+                        let input = self.exemption_editor.manual_input.trim();
+                        if !input.is_empty() {
+                            let path = std::path::PathBuf::from(input);
+                            if path.exists() {
+                                match hash_file_dual(&path) {
+                                    Ok((sha256, blake3)) => {
+                                        let exemption =
+                                            Exemption::new(path.clone(), sha256, blake3);
+                                        self.settings.exemptions.add(exemption.clone());
+                                        log::info!(
+                                            "Added PriorityGuard exemption: {} ({})",
+                                            exemption.display_name,
+                                            path.display()
+                                        );
+                                        // Save settings
+                                        let persisted =
+                                            crate::config::PersistedSettings::from(&self.settings);
+                                        if let Err(e) = crate::config::save(&persisted) {
+                                            log::warn!("Failed to save settings: {}", e);
+                                        }
+                                        // Clear input after adding
+                                        self.exemption_editor.manual_input.clear();
+                                        self.exemption_editor.manual_cursor = 0;
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to hash file {}: {}",
+                                            path.display(),
+                                            e
+                                        );
+                                    }
+                                }
+                            } else {
+                                log::warn!("File does not exist: {}", path.display());
+                            }
+                        }
+                    }
+                    KeyCode::Esc => {
+                        // Exit to Settings
+                        self.ui_mode = UIMode::Settings;
+                    }
+                    KeyCode::Backspace => {
+                        if self.exemption_editor.manual_cursor > 0 {
+                            let prev = self.exemption_editor.manual_input
+                                [..self.exemption_editor.manual_cursor]
+                                .char_indices()
+                                .next_back()
+                                .map(|(i, _)| i)
+                                .unwrap_or(0);
+                            self.exemption_editor.manual_input.remove(prev);
+                            self.exemption_editor.manual_cursor = prev;
+                        }
+                    }
+                    KeyCode::Delete => {
+                        if self.exemption_editor.manual_cursor
+                            < self.exemption_editor.manual_input.len()
                         {
-                            self.exemption_editor.selected -= 1;
-                        }
-                        // Save settings
-                        let persisted = crate::config::PersistedSettings::from(&self.settings);
-                        if let Err(e) = crate::config::save(&persisted) {
-                            log::warn!("Failed to save settings: {}", e);
+                            self.exemption_editor
+                                .manual_input
+                                .remove(self.exemption_editor.manual_cursor);
                         }
                     }
+                    KeyCode::Left => {
+                        if self.exemption_editor.manual_cursor > 0 {
+                            self.exemption_editor.manual_cursor = self
+                                .exemption_editor
+                                .manual_input[..self.exemption_editor.manual_cursor]
+                                .char_indices()
+                                .next_back()
+                                .map(|(i, _)| i)
+                                .unwrap_or(0);
+                        }
+                    }
+                    KeyCode::Right => {
+                        if self.exemption_editor.manual_cursor
+                            < self.exemption_editor.manual_input.len()
+                        {
+                            self.exemption_editor.manual_cursor = self
+                                .exemption_editor
+                                .manual_input[self.exemption_editor.manual_cursor..]
+                                .char_indices()
+                                .nth(1)
+                                .map(|(i, _)| self.exemption_editor.manual_cursor + i)
+                                .unwrap_or(self.exemption_editor.manual_input.len());
+                        }
+                    }
+                    KeyCode::Home => {
+                        self.exemption_editor.manual_cursor = 0;
+                    }
+                    KeyCode::End => {
+                        self.exemption_editor.manual_cursor =
+                            self.exemption_editor.manual_input.len();
+                    }
+                    KeyCode::Char('e') | KeyCode::Char('E') => {
+                        // Exit to Settings
+                        self.ui_mode = UIMode::Settings;
+                    }
+                    KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
+                    KeyCode::Char(c) => {
+                        self.exemption_editor
+                            .manual_input
+                            .insert(self.exemption_editor.manual_cursor, c);
+                        self.exemption_editor.manual_cursor += c.len_utf8();
+                    }
+                    _ => {}
                 }
-                KeyCode::Char('a') | KeyCode::Enter => {
-                    // Start adding new exemption
-                    self.exemption_editor.editing_new = true;
-                    self.exemption_editor.input_buffer.clear();
-                    self.exemption_editor.input_cursor = 0;
-                }
-                KeyCode::Esc | KeyCode::Char('e') | KeyCode::Char('E') => {
-                    // Exit to Settings
-                    self.ui_mode = UIMode::Settings;
-                    self.exemption_editor.selected = 0;
-                    self.exemption_editor.editing_new = false;
-                    self.exemption_editor.input_buffer.clear();
-                    self.exemption_editor.input_cursor = 0;
-                }
-                KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
-                _ => {}
             }
         }
         Ok(false)
@@ -1393,12 +1428,13 @@ mod tests {
     }
 
     #[test]
-    fn exemption_editor_state_initialized() {
+    fn exemption_picker_state_initialized() {
+        use crate::exemption::PickerTab;
         let app = make_app(vec![]);
-        assert_eq!(app.exemption_editor.selected, 0);
-        assert!(!app.exemption_editor.editing_new);
-        assert!(app.exemption_editor.input_buffer.is_empty());
-        assert_eq!(app.exemption_editor.input_cursor, 0);
+        assert_eq!(app.exemption_editor.active_tab, PickerTab::RunningProcesses);
+        assert_eq!(app.exemption_editor.running_selected, 0);
+        assert!(app.exemption_editor.manual_input.is_empty());
+        assert_eq!(app.exemption_editor.manual_cursor, 0);
     }
 }
 
