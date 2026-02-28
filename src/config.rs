@@ -1,5 +1,6 @@
 //! Persistent settings: load/save to JSON file in the user's config directory.
 
+use crate::exemption::ExemptionData;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -17,6 +18,10 @@ pub struct PersistedSettings {
     pub priority_guard_ema_alpha: f32,
     pub priority_guard_grace_period_secs: u64,
     pub priority_guard_adaptive_sensitivity: f32,
+    // V2: Path+hash based exemptions (replaces user_exemptions)
+    pub exemptions: Vec<ExemptionData>,
+    // Deprecated: Old filename-based exemptions (for migration detection)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub user_exemptions: Vec<String>,
 }
 
@@ -33,6 +38,7 @@ impl Default for PersistedSettings {
             priority_guard_ema_alpha: 0.3,
             priority_guard_grace_period_secs: 5,
             priority_guard_adaptive_sensitivity: 0.4,
+            exemptions: vec![],
             user_exemptions: vec![],
         }
     }
@@ -44,12 +50,29 @@ pub fn settings_path() -> Option<PathBuf> {
 }
 
 /// Load settings from disk. Returns defaults if file doesn't exist or is invalid.
+/// Automatically migrates from old filename-based exemptions to path+hash based exemptions.
 pub fn load() -> PersistedSettings {
     let Some(path) = settings_path() else {
         return PersistedSettings::default();
     };
     match std::fs::read_to_string(&path) {
-        Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
+        Ok(contents) => {
+            let mut settings: PersistedSettings =
+                serde_json::from_str(&contents).unwrap_or_default();
+
+            // Migration: Clear old user_exemptions if they exist
+            if !settings.user_exemptions.is_empty() {
+                log::info!(
+                    "Migrating from v1 (filename-based) to v2 (path+hash) exemptions. Clearing {} old exemptions - please re-add via the new UI.",
+                    settings.user_exemptions.len()
+                );
+                settings.user_exemptions.clear();
+                // Auto-save migrated settings
+                let _ = save(&settings);
+            }
+
+            settings
+        }
         Err(_) => PersistedSettings::default(),
     }
 }
@@ -69,7 +92,10 @@ pub fn save(settings: &PersistedSettings) -> anyhow::Result<()> {
 
 /// Convert from SettingsState to PersistedSettings.
 impl From<&crate::common::SettingsState> for PersistedSettings {
+    #[allow(deprecated)]
     fn from(s: &crate::common::SettingsState) -> Self {
+        use crate::exemption::to_persisted_format;
+
         Self {
             poll_interval_ms: s.poll_interval_ms,
             hide_self: s.hide_self,
@@ -81,13 +107,20 @@ impl From<&crate::common::SettingsState> for PersistedSettings {
             priority_guard_ema_alpha: s.priority_guard_ema_alpha,
             priority_guard_grace_period_secs: s.priority_guard_grace_period_secs,
             priority_guard_adaptive_sensitivity: s.priority_guard_adaptive_sensitivity,
+            exemptions: {
+                let exemption_vec: Vec<_> = s.exemptions.iter().cloned().collect();
+                to_persisted_format(&exemption_vec)
+            },
             user_exemptions: s.user_exemptions.clone(),
         }
     }
 }
 
 /// Apply persisted settings to a SettingsState.
+#[allow(deprecated)]
 pub fn apply_to(persisted: &PersistedSettings, settings: &mut crate::common::SettingsState) {
+    use crate::exemption::from_persisted_format;
+
     settings.poll_interval_ms = persisted.poll_interval_ms;
     settings.hide_self = persisted.hide_self;
     settings.priority_guard_enabled = persisted.priority_guard_enabled;
@@ -98,6 +131,14 @@ pub fn apply_to(persisted: &PersistedSettings, settings: &mut crate::common::Set
     settings.priority_guard_ema_alpha = persisted.priority_guard_ema_alpha;
     settings.priority_guard_grace_period_secs = persisted.priority_guard_grace_period_secs;
     settings.priority_guard_adaptive_sensitivity = persisted.priority_guard_adaptive_sensitivity;
+
+    // Load v2 exemptions
+    let exemptions = from_persisted_format(persisted.exemptions.clone());
+    settings.exemptions.clear();
+    for exemption in exemptions {
+        settings.exemptions.add(exemption);
+    }
+
     settings.user_exemptions = persisted.user_exemptions.clone();
 }
 
@@ -130,6 +171,7 @@ mod tests {
             priority_guard_ema_alpha: 0.3,
             priority_guard_grace_period_secs: 5,
             priority_guard_adaptive_sensitivity: 0.0,
+            exemptions: vec![],
             user_exemptions: vec!["chrome.exe".to_string(), "firefox.exe".to_string()],
         };
         let json = serde_json::to_string(&s).unwrap();
@@ -180,6 +222,7 @@ mod tests {
         assert!(p.priority_guard_enabled);
         assert_eq!(p.priority_guard_cpu_threshold, 60.0);
         assert_eq!(p.priority_guard_duration_secs, 5);
+        assert!(p.exemptions.is_empty());
     }
 
     #[test]
@@ -195,6 +238,7 @@ mod tests {
             priority_guard_ema_alpha: 0.5,
             priority_guard_grace_period_secs: 10,
             priority_guard_adaptive_sensitivity: 0.5,
+            exemptions: vec![],
             user_exemptions: vec!["test.exe".to_string()],
         };
         let mut ss = crate::common::SettingsState::new();
@@ -224,6 +268,8 @@ mod tests {
 
     #[test]
     fn round_trip_with_exemptions() {
+        use std::path::PathBuf;
+
         let s = PersistedSettings {
             poll_interval_ms: 1000,
             hide_self: false,
@@ -235,23 +281,36 @@ mod tests {
             priority_guard_ema_alpha: 0.3,
             priority_guard_grace_period_secs: 5,
             priority_guard_adaptive_sensitivity: 0.4,
-            user_exemptions: vec![
-                "chrome.exe".to_string(),
-                "firefox.exe".to_string(),
-                "blender.exe".to_string(),
+            exemptions: vec![
+                ExemptionData {
+                    path: PathBuf::from("C:\\test\\chrome.exe"),
+                    sha256: "abc123".to_string(),
+                    blake3: "def456".to_string(),
+                },
+                ExemptionData {
+                    path: PathBuf::from("C:\\test\\firefox.exe"),
+                    sha256: "ghi789".to_string(),
+                    blake3: "jkl012".to_string(),
+                },
             ],
+            user_exemptions: vec![],
         };
         let json = serde_json::to_string(&s).unwrap();
         let loaded: PersistedSettings = serde_json::from_str(&json).unwrap();
-        assert_eq!(loaded.user_exemptions.len(), 3);
-        assert_eq!(loaded.user_exemptions[0], "chrome.exe");
-        assert_eq!(loaded.user_exemptions[1], "firefox.exe");
-        assert_eq!(loaded.user_exemptions[2], "blender.exe");
+        assert_eq!(loaded.exemptions.len(), 2);
+        assert_eq!(
+            loaded.exemptions[0].path,
+            PathBuf::from("C:\\test\\chrome.exe")
+        );
+        assert_eq!(
+            loaded.exemptions[1].path,
+            PathBuf::from("C:\\test\\firefox.exe")
+        );
     }
 
     #[test]
     fn backward_compat_missing_exemptions() {
-        // Old settings.json without user_exemptions field should default to empty vec
+        // Old settings.json without exemptions field should default to empty vec
         let json = r#"{
             "poll_interval_ms": 2000,
             "hide_self": false,
@@ -265,6 +324,7 @@ mod tests {
             "priority_guard_adaptive_sensitivity": 0.4
         }"#;
         let s: PersistedSettings = serde_json::from_str(json).unwrap();
+        assert!(s.exemptions.is_empty());
         assert!(s.user_exemptions.is_empty());
     }
 }

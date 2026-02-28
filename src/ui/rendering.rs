@@ -1,3 +1,6 @@
+//! UI rendering - temporary allow for deprecated fields during migration
+#![allow(deprecated)]
+
 /// Build the filter box display text.
 pub fn build_filter_content(query: &str, cursor: usize, focused: bool) -> String {
     if focused {

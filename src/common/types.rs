@@ -1,5 +1,6 @@
-use ratatui::widgets::TableState;
 /// Shared types across the application
+use crate::exemption::{ExemptionList, VerificationService};
+use ratatui::widgets::TableState;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +73,10 @@ pub struct SettingsState {
     pub priority_guard_ema_alpha: f32,
     pub priority_guard_grace_period_secs: u64,
     pub priority_guard_adaptive_sensitivity: f32,
+    pub exemptions: ExemptionList,
+    pub exemption_verifier: VerificationService,
+    // Deprecated: kept for backward compatibility during transition
+    #[deprecated(note = "Use exemptions field instead")]
     pub user_exemptions: Vec<String>,
 }
 
@@ -97,6 +102,9 @@ impl SettingsState {
             priority_guard_ema_alpha: 0.3,
             priority_guard_grace_period_secs: 5,
             priority_guard_adaptive_sensitivity: 0.4,
+            exemptions: ExemptionList::new(),
+            exemption_verifier: VerificationService::new(),
+            #[allow(deprecated)]
             user_exemptions: vec![],
         }
     }

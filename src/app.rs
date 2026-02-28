@@ -1,3 +1,6 @@
+//! App state machine - temporary allow for deprecated fields during migration
+#![allow(deprecated)]
+
 use crate::common::{
     DataSourceMode, ExemptionEditorState, PendingAction, ProcessListState, SettingsState, UIMode,
 };
