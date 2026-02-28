@@ -488,7 +488,7 @@ impl App {
                         self.exemption_editor
                             .refresh_candidates(&self.process_list.processes);
                     }
-                    KeyCode::Esc | KeyCode::Char('e') | KeyCode::Char('E') => {
+                    KeyCode::Esc => {
                         // Exit to Settings
                         self.ui_mode = UIMode::Settings;
                     }
@@ -499,7 +499,7 @@ impl App {
             PickerTab::Browse => {
                 // TODO: Implement file browser navigation in next phase
                 match key {
-                    KeyCode::Esc | KeyCode::Char('e') | KeyCode::Char('E') => {
+                    KeyCode::Esc => {
                         self.ui_mode = UIMode::Settings;
                     }
                     KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
@@ -603,11 +603,6 @@ impl App {
                         self.exemption_editor.manual_cursor =
                             self.exemption_editor.manual_input.len();
                     }
-                    KeyCode::Char('e') | KeyCode::Char('E') => {
-                        // Exit to Settings
-                        self.ui_mode = UIMode::Settings;
-                    }
-                    KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
                     KeyCode::Char(c) => {
                         self.exemption_editor
                             .manual_input
@@ -1427,6 +1422,126 @@ mod tests {
         assert!(app.exemption_editor.manual_input.is_empty());
         assert_eq!(app.exemption_editor.manual_cursor, 0);
     }
+
+    #[test]
+    fn exemption_picker_tab_switching() {
+        use crate::exemption::PickerTab;
+        use crossterm::event::KeyCode;
+        let mut app = make_app(vec![]);
+
+        // Open exemption picker
+        app.settings.selected_option = 10;
+        app.handle_settings_key(KeyCode::Enter).unwrap();
+        assert_eq!(app.ui_mode, UIMode::ExemptionEditor);
+        assert_eq!(app.exemption_editor.active_tab, PickerTab::RunningProcesses);
+
+        // Tab cycles through tabs
+        app.handle_exemption_editor_key(KeyCode::Tab).unwrap();
+        assert_eq!(app.exemption_editor.active_tab, PickerTab::Browse);
+
+        app.handle_exemption_editor_key(KeyCode::Tab).unwrap();
+        assert_eq!(app.exemption_editor.active_tab, PickerTab::ManualEntry);
+
+        app.handle_exemption_editor_key(KeyCode::Tab).unwrap();
+        assert_eq!(app.exemption_editor.active_tab, PickerTab::RunningProcesses);
+    }
+
+    #[test]
+    fn exemption_picker_manual_entry_cursor() {
+        use crate::exemption::PickerTab;
+        use crossterm::event::KeyCode;
+        let mut app = make_app(vec![]);
+
+        app.settings.selected_option = 10;
+        app.handle_settings_key(KeyCode::Enter).unwrap();
+
+        // Switch to manual entry tab
+        app.exemption_editor.active_tab = PickerTab::ManualEntry;
+
+        // Type some characters
+        app.handle_exemption_editor_key(KeyCode::Char('t')).unwrap();
+        app.handle_exemption_editor_key(KeyCode::Char('e')).unwrap();
+        app.handle_exemption_editor_key(KeyCode::Char('x')).unwrap();
+        app.handle_exemption_editor_key(KeyCode::Char('t')).unwrap();
+
+        assert_eq!(app.exemption_editor.manual_input, "text");
+        assert_eq!(app.exemption_editor.manual_cursor, 4);
+
+        // Home/End
+        app.handle_exemption_editor_key(KeyCode::Home).unwrap();
+        assert_eq!(app.exemption_editor.manual_cursor, 0);
+
+        app.handle_exemption_editor_key(KeyCode::End).unwrap();
+        assert_eq!(app.exemption_editor.manual_cursor, 4);
+
+        // Backspace at end
+        app.handle_exemption_editor_key(KeyCode::Backspace).unwrap();
+        assert_eq!(app.exemption_editor.manual_input, "tex");
+        assert_eq!(app.exemption_editor.manual_cursor, 3);
+    }
+
+    #[test]
+    fn exemption_picker_running_processes_navigation() {
+        use crossterm::event::KeyCode;
+        let procs = vec![
+            ProcessInfo {
+                pid: 1,
+                name: "proc1".into(),
+                cpu: 10.0,
+                memory: 1000,
+            },
+            ProcessInfo {
+                pid: 2,
+                name: "proc2".into(),
+                cpu: 20.0,
+                memory: 2000,
+            },
+            ProcessInfo {
+                pid: 3,
+                name: "proc3".into(),
+                cpu: 30.0,
+                memory: 3000,
+            },
+        ];
+        let mut app = make_app(procs);
+
+        app.settings.selected_option = 10;
+        app.handle_settings_key(KeyCode::Enter).unwrap();
+
+        // Candidates are refreshed on open
+        // Note: Actual candidates depend on sysinfo being able to get exe paths
+        // Just verify navigation doesn't crash
+        app.handle_exemption_editor_key(KeyCode::Down).unwrap();
+        app.handle_exemption_editor_key(KeyCode::Up).unwrap();
+        app.handle_exemption_editor_key(KeyCode::Char('r')).unwrap(); // Refresh
+    }
+
+    #[test]
+    fn exemption_picker_esc_exits() {
+        use crossterm::event::KeyCode;
+        let mut app = make_app(vec![]);
+
+        app.settings.selected_option = 10;
+        app.handle_settings_key(KeyCode::Enter).unwrap();
+        assert_eq!(app.ui_mode, UIMode::ExemptionEditor);
+
+        app.handle_exemption_editor_key(KeyCode::Esc).unwrap();
+        assert_eq!(app.ui_mode, UIMode::Settings);
+    }
+
+    #[test]
+    fn exemption_picker_manual_entry_esc_exits() {
+        use crate::exemption::PickerTab;
+        use crossterm::event::KeyCode;
+        let mut app = make_app(vec![]);
+
+        app.settings.selected_option = 10;
+        app.handle_settings_key(KeyCode::Enter).unwrap();
+        app.exemption_editor.active_tab = PickerTab::ManualEntry;
+
+        app.handle_exemption_editor_key(KeyCode::Esc).unwrap();
+        assert_eq!(app.ui_mode, UIMode::Settings);
+    }
 }
 
 #[cfg(test)]
@@ -1697,6 +1812,65 @@ mod fuzz_tests {
                 let _ = app.on_key(KeyCode::Char('y'));
                 prop_assert!(app.pending_action.is_none());
             }
+        }
+
+        /// Fuzz exemption picker key handling - should never panic.
+        #[test]
+        fn fuzz_exemption_picker_keys(
+            keys in prop::collection::vec(
+                prop_oneof![
+                    Just(KeyCode::Tab),
+                    Just(KeyCode::Up),
+                    Just(KeyCode::Down),
+                    Just(KeyCode::Left),
+                    Just(KeyCode::Right),
+                    Just(KeyCode::Home),
+                    Just(KeyCode::End),
+                    Just(KeyCode::Enter),
+                    Just(KeyCode::Esc),
+                    Just(KeyCode::Backspace),
+                    Just(KeyCode::Delete),
+                    Just(KeyCode::Char('r')),
+                    "[a-zA-Z0-9_./:\\\\]".prop_map(|s| KeyCode::Char(s.chars().next().unwrap())),
+                ],
+                0..50
+            )
+        ) {
+            let mut app = make_app(sample_procs());
+            app.settings.selected_option = 10;
+            let _ = app.handle_settings_key(KeyCode::Enter);
+
+            for key in keys {
+                let result = app.handle_exemption_editor_key(key);
+                prop_assert!(result.is_ok());
+                prop_assert!(app.exemption_editor.manual_cursor <= app.exemption_editor.manual_input.len());
+            }
+        }
+
+        /// Fuzz exemption list operations maintain invariants.
+        #[test]
+        fn fuzz_exemption_operations(count in 0usize..30) {
+            use crate::exemption::{Exemption, ExemptionList};
+
+            let mut list = ExemptionList::new();
+            for i in 0..count {
+                let exemption = Exemption::new(
+                    std::path::PathBuf::from(format!("C:\\test_{}.exe", i)),
+                    format!("{:064x}", i),
+                    format!("{:064x}", i),
+                );
+                list.add(exemption);
+            }
+
+            prop_assert_eq!(list.len(), count);
+            prop_assert_eq!(list.is_empty(), count == 0);
+            prop_assert_eq!(list.iter().count(), count);
+
+            // Remove all
+            while !list.is_empty() {
+                let _ = list.remove(0);
+            }
+            prop_assert!(list.is_empty());
         }
     }
 }
