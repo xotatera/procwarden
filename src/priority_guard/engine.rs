@@ -155,7 +155,8 @@ impl PriorityGuardEngine {
         let mut pending_history: Vec<u32> = Vec::new();
 
         for proc in processes {
-            if is_exempt(proc.pid, &proc.name, &config.exemption_matcher) {
+            // TODO: Look up exe paths once per tick and pass here to avoid per-process lookups
+            if is_exempt(proc.pid, &proc.name, &config.exemption_matcher, None) {
                 continue;
             }
 
