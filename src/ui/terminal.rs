@@ -21,10 +21,7 @@ pub fn init_terminal() -> Result<TerminalHandle> {
 /// Restore terminal to normal mode
 pub fn restore_terminal(terminal: &mut TerminalHandle) -> Result<()> {
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen,)?;
     terminal.show_cursor()?;
     Ok(())
 }

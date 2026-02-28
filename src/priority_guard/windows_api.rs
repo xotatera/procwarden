@@ -2,12 +2,10 @@
 
 #[cfg(all(windows, feature = "etw"))]
 use windows::Win32::System::Threading::{
-    OpenProcess, GetPriorityClass, SetPriorityClass,
-    PROCESS_QUERY_INFORMATION, PROCESS_SET_INFORMATION,
-    PROCESS_TERMINATE, THREAD_SUSPEND_RESUME,
-    IDLE_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS,
-    NORMAL_PRIORITY_CLASS, ABOVE_NORMAL_PRIORITY_CLASS,
-    HIGH_PRIORITY_CLASS, REALTIME_PRIORITY_CLASS,
+    GetPriorityClass, OpenProcess, SetPriorityClass, ABOVE_NORMAL_PRIORITY_CLASS,
+    BELOW_NORMAL_PRIORITY_CLASS, HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
+    PROCESS_QUERY_INFORMATION, PROCESS_SET_INFORMATION, PROCESS_TERMINATE, REALTIME_PRIORITY_CLASS,
+    THREAD_SUSPEND_RESUME,
 };
 
 /// Priority class values for display purposes.
@@ -73,9 +71,12 @@ pub fn set_priority(pid: u32, priority_class: u32) -> bool {
         let Ok(handle) = OpenProcess(PROCESS_SET_INFORMATION, false, pid) else {
             return false;
         };
-        let result = SetPriorityClass(handle, windows::Win32::System::Threading::PROCESS_CREATION_FLAGS(priority_class));
+        let result = SetPriorityClass(
+            handle,
+            windows::Win32::System::Threading::PROCESS_CREATION_FLAGS(priority_class),
+        );
         let _ = windows::Win32::Foundation::CloseHandle(handle);
-        result.as_bool()
+        result.is_ok()
     }
 }
 
@@ -100,7 +101,7 @@ pub fn terminate_process(pid: u32) -> bool {
         };
         let result = TerminateProcess(handle, 1);
         let _ = windows::Win32::Foundation::CloseHandle(handle);
-        result.as_bool()
+        result.is_ok()
     }
 }
 
@@ -113,8 +114,7 @@ pub fn terminate_process(_pid: u32) -> bool {
 #[cfg(all(windows, feature = "etw"))]
 pub fn suspend_process(pid: u32) -> bool {
     use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Thread32First, Thread32Next,
-        TH32CS_SNAPTHREAD, THREADENTRY32,
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
     };
     use windows::Win32::System::Threading::{OpenThread, SuspendThread};
     unsafe {
@@ -126,16 +126,17 @@ pub fn suspend_process(pid: u32) -> bool {
             ..Default::default()
         };
         let mut suspended_any = false;
-        if Thread32First(snap, &mut entry).as_bool() {
+        if Thread32First(snap, &mut entry).is_ok() {
             loop {
                 if entry.th32OwnerProcessID == pid {
-                    if let Ok(thread) = OpenThread(THREAD_SUSPEND_RESUME, false, entry.th32ThreadID) {
+                    if let Ok(thread) = OpenThread(THREAD_SUSPEND_RESUME, false, entry.th32ThreadID)
+                    {
                         SuspendThread(thread);
                         let _ = windows::Win32::Foundation::CloseHandle(thread);
                         suspended_any = true;
                     }
                 }
-                if !Thread32Next(snap, &mut entry).as_bool() {
+                if Thread32Next(snap, &mut entry).is_err() {
                     break;
                 }
             }
@@ -154,8 +155,7 @@ pub fn suspend_process(_pid: u32) -> bool {
 #[cfg(all(windows, feature = "etw"))]
 pub fn resume_process(pid: u32) -> bool {
     use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Thread32First, Thread32Next,
-        TH32CS_SNAPTHREAD, THREADENTRY32,
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
     };
     use windows::Win32::System::Threading::{OpenThread, ResumeThread};
     unsafe {
@@ -167,16 +167,17 @@ pub fn resume_process(pid: u32) -> bool {
             ..Default::default()
         };
         let mut resumed_any = false;
-        if Thread32First(snap, &mut entry).as_bool() {
+        if Thread32First(snap, &mut entry).is_ok() {
             loop {
                 if entry.th32OwnerProcessID == pid {
-                    if let Ok(thread) = OpenThread(THREAD_SUSPEND_RESUME, false, entry.th32ThreadID) {
+                    if let Ok(thread) = OpenThread(THREAD_SUSPEND_RESUME, false, entry.th32ThreadID)
+                    {
                         ResumeThread(thread);
                         let _ = windows::Win32::Foundation::CloseHandle(thread);
                         resumed_any = true;
                     }
                 }
-                if !Thread32Next(snap, &mut entry).as_bool() {
+                if Thread32Next(snap, &mut entry).is_err() {
                     break;
                 }
             }
@@ -221,7 +222,7 @@ pub fn get_foreground_pid() -> Option<u32> {
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
     unsafe {
         let hwnd = GetForegroundWindow();
-        if hwnd.0 == 0 {
+        if hwnd.0.is_null() {
             return None;
         }
         let mut pid: u32 = 0;
@@ -237,6 +238,193 @@ pub fn get_foreground_pid() -> Option<u32> {
 #[cfg(not(all(windows, feature = "etw")))]
 pub fn get_foreground_pid() -> Option<u32> {
     None
+}
+
+/// Process integrity level (Windows security context).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum IntegrityLevel {
+    Untrusted,
+    Low,
+    Medium,
+    High,
+    System,
+    Unknown,
+}
+
+// Manual FFI declarations for Security APIs not exposed in windows crate
+#[cfg(all(windows, feature = "etw"))]
+#[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+mod security_ffi {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Security::PSID;
+
+    #[repr(C)]
+    pub struct TOKEN_MANDATORY_LABEL {
+        pub Label: SID_AND_ATTRIBUTES,
+    }
+
+    #[repr(C)]
+    pub struct SID_AND_ATTRIBUTES {
+        pub Sid: PSID,
+        pub Attributes: u32,
+    }
+
+    pub const TOKEN_QUERY: u32 = 0x0008;
+    pub const TokenIntegrityLevel: u32 = 25;
+
+    extern "system" {
+        pub fn OpenProcessToken(
+            ProcessHandle: HANDLE,
+            DesiredAccess: u32,
+            TokenHandle: *mut HANDLE,
+        ) -> BOOL;
+
+        pub fn GetTokenInformation(
+            TokenHandle: HANDLE,
+            TokenInformationClass: u32,
+            TokenInformation: *mut std::ffi::c_void,
+            TokenInformationLength: u32,
+            ReturnLength: *mut u32,
+        ) -> BOOL;
+
+        pub fn GetSidSubAuthorityCount(pSid: PSID) -> *mut u8;
+
+        pub fn GetSidSubAuthority(pSid: PSID, nSubAuthority: u32) -> *mut u32;
+    }
+}
+
+/// Get the integrity level of a process by PID.
+/// High or System integrity typically indicates a system-critical process.
+#[cfg(all(windows, feature = "etw"))]
+pub fn get_process_integrity_level(pid: u32) -> Option<IntegrityLevel> {
+    use security_ffi::*;
+    use windows::Win32::Foundation::CloseHandle;
+
+    unsafe {
+        // Open the process
+        let Ok(process) = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid) else {
+            return None;
+        };
+
+        // Open the process token
+        let mut token = Default::default();
+        let token_result = OpenProcessToken(process, TOKEN_QUERY, &mut token);
+        let _ = CloseHandle(process);
+        if !token_result.as_bool() {
+            return None;
+        }
+
+        // Query the token integrity level
+        let mut label_size: u32 = 0;
+        // First call to get size
+        let _ = GetTokenInformation(
+            token,
+            TokenIntegrityLevel,
+            std::ptr::null_mut(),
+            0,
+            &mut label_size,
+        );
+
+        if label_size == 0 {
+            let _ = CloseHandle(token);
+            return None;
+        }
+
+        // Allocate buffer and get actual data
+        let mut buffer = vec![0u8; label_size as usize];
+        let result = GetTokenInformation(
+            token,
+            TokenIntegrityLevel,
+            buffer.as_mut_ptr() as *mut _,
+            label_size,
+            &mut label_size,
+        );
+
+        let _ = CloseHandle(token);
+
+        if !result.as_bool() {
+            return None;
+        }
+
+        // Parse the TOKEN_MANDATORY_LABEL structure
+        let label = &*(buffer.as_ptr() as *const TOKEN_MANDATORY_LABEL);
+        let sid = label.Label.Sid;
+
+        // Get the integrity level from the SID
+        // The integrity level is stored in the last subauthority
+        let sub_auth_count_ptr = GetSidSubAuthorityCount(sid);
+        if sub_auth_count_ptr.is_null() {
+            return None;
+        }
+        let sub_auth_count = *sub_auth_count_ptr;
+        if sub_auth_count == 0 {
+            return None;
+        }
+
+        let integrity_level_ptr = GetSidSubAuthority(sid, (sub_auth_count - 1) as u32);
+        if integrity_level_ptr.is_null() {
+            return None;
+        }
+        let integrity_level = *integrity_level_ptr;
+
+        // Map to IntegrityLevel enum
+        // Windows integrity level RIDs
+        Some(match integrity_level {
+            0x0000 => IntegrityLevel::Untrusted,
+            0x1000 => IntegrityLevel::Low,
+            0x2000 => IntegrityLevel::Medium,
+            0x3000 => IntegrityLevel::High,
+            0x4000 => IntegrityLevel::System,
+            _ => IntegrityLevel::Unknown,
+        })
+    }
+}
+
+#[cfg(not(all(windows, feature = "etw")))]
+pub fn get_process_integrity_level(_pid: u32) -> Option<IntegrityLevel> {
+    None
+}
+
+/// Get the session ID of a process by PID.
+/// Session 0 is the system services session (NT AUTHORITY\SYSTEM).
+#[cfg(all(windows, feature = "etw"))]
+pub fn get_process_session_id(pid: u32) -> Option<u32> {
+    use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
+
+    unsafe {
+        let mut session_id: u32 = 0;
+        if ProcessIdToSessionId(pid, &mut session_id).is_ok() {
+            Some(session_id)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(not(all(windows, feature = "etw")))]
+pub fn get_process_session_id(_pid: u32) -> Option<u32> {
+    None
+}
+
+/// Check if a process is system-critical based on integrity level or session ID.
+/// Returns true if the process has High/System integrity or runs in Session 0.
+pub fn is_system_critical(pid: u32) -> bool {
+    // Check integrity level (High or System = critical)
+    if let Some(level) = get_process_integrity_level(pid) {
+        if matches!(level, IntegrityLevel::High | IntegrityLevel::System) {
+            return true;
+        }
+    }
+
+    // Check session ID (Session 0 = system services)
+    if let Some(session_id) = get_process_session_id(pid) {
+        if session_id == 0 {
+            return true;
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]

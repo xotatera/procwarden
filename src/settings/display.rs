@@ -1,6 +1,10 @@
 /// Pure function: Get status string for hide_self setting
 pub fn get_hide_self_status(hide_self: bool) -> &'static str {
-    if hide_self { "ON" } else { "OFF" }
+    if hide_self {
+        "ON"
+    } else {
+        "OFF"
+    }
 }
 
 /// Pure function: Validate and clamp poll interval

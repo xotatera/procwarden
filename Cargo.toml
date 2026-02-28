@@ -1,6 +1,6 @@
 [package]
 name = "procwarden"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "GPL-3.0-only"
 default-run = "procwarden"
@@ -23,7 +23,7 @@ serde_json = "1"
 dirs = "5"
 log = "0.4"
 env_logger = "0.11"
-windows = { version = "0.48", features = [
+windows = { version = "0.62", features = [
     "Win32_System_Diagnostics_Etw",
     "Win32_Foundation",
     "Win32_System_Time",
@@ -33,6 +33,9 @@ windows = { version = "0.48", features = [
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Diagnostics_ToolHelp",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_RemoteDesktop",
 ], optional = true }
 
 [dev-dependencies]

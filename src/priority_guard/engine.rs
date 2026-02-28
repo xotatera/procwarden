@@ -3,9 +3,9 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::time::Instant;
 
-use crate::common::ProcessInfo;
-use super::config::{PriorityGuardConfig, is_exempt};
+use super::config::{is_exempt, PriorityGuardConfig};
 use super::windows_api;
+use crate::common::ProcessInfo;
 
 /// Tracks a process that exceeded the CPU threshold.
 #[derive(Debug)]
@@ -70,7 +70,10 @@ impl PriorityGuardEngine {
         if self.log.len() >= MAX_LOG_ENTRIES {
             self.log.pop_front();
         }
-        self.log.push_back(LogEntry { elapsed_secs, message });
+        self.log.push_back(LogEntry {
+            elapsed_secs,
+            message,
+        });
     }
 
     /// Get the log entries for display.
@@ -107,13 +110,15 @@ impl PriorityGuardEngine {
         for &pid in &current_pids {
             self.first_seen_times.entry(pid).or_insert(now);
         }
-        self.first_seen_times.retain(|pid, _| current_pids.contains(pid));
+        self.first_seen_times
+            .retain(|pid, _| current_pids.contains(pid));
         self.grace_logged.retain(|pid| current_pids.contains(pid));
 
         // Update EMA values
         let alpha = config.ema_alpha;
         for proc in processes {
-            let ema = self.ema_values
+            let ema = self
+                .ema_values
                 .entry(proc.pid)
                 .and_modify(|prev| *prev = alpha * proc.cpu + (1.0 - alpha) * *prev)
                 .or_insert(proc.cpu);
@@ -150,7 +155,7 @@ impl PriorityGuardEngine {
         let mut pending_history: Vec<u32> = Vec::new();
 
         for proc in processes {
-            if is_exempt(&proc.name, &config.user_exemptions) {
+            if is_exempt(proc.pid, &proc.name, &config.user_exemptions) {
                 continue;
             }
 
@@ -185,13 +190,14 @@ impl PriorityGuardEngine {
                     ));
                 }
 
-                let entry = self.offenders.entry(proc.pid).or_insert_with(|| {
-                    OffenderEntry {
+                let entry = self
+                    .offenders
+                    .entry(proc.pid)
+                    .or_insert_with(|| OffenderEntry {
                         first_seen: now,
                         original_priority: None,
                         current_tier: 0,
-                    }
-                });
+                    });
 
                 // Repeat offender: reduce effective duration
                 let effective_duration_secs = if repeat_count > 0 {
@@ -205,15 +211,23 @@ impl PriorityGuardEngine {
                 // Tier 1: Below Normal (after effective_duration)
                 if entry.current_tier == 0 && elapsed >= effective_duration {
                     if entry.original_priority.is_none() {
-                        entry.original_priority = windows_api::get_priority(proc.pid).map(|(raw, _)| raw);
+                        entry.original_priority =
+                            windows_api::get_priority(proc.pid).map(|(raw, _)| raw);
                     }
                     if windows_api::set_priority(proc.pid, windows_api::DEMOTE_PRIORITY) {
                         entry.current_tier = 1;
                         pending_history.push(proc.pid);
                     }
-                    let status = if entry.current_tier == 1 { "demoted (tier 1)" } else { "demotion failed" };
+                    let status = if entry.current_tier == 1 {
+                        "demoted (tier 1)"
+                    } else {
+                        "demotion failed"
+                    };
                     let repeat_info = if repeat_count > 0 {
-                        format!(", repeat #{} (eff. dur {}s)", repeat_count, effective_duration_secs)
+                        format!(
+                            ", repeat #{} (eff. dur {}s)",
+                            repeat_count, effective_duration_secs
+                        )
                     } else {
                         String::new()
                     };
@@ -233,11 +247,22 @@ impl PriorityGuardEngine {
                     if windows_api::set_priority(proc.pid, windows_api::IDLE_PRIORITY) {
                         entry.current_tier = 2;
                     }
-                    let status = if entry.current_tier == 2 { "escalated (tier 2 idle)" } else { "tier 2 failed" };
+                    let status = if entry.current_tier == 2 {
+                        "escalated (tier 2 idle)"
+                    } else {
+                        "tier 2 failed"
+                    };
                     pending_logs.push(format!(
                         "{}: PID {} ({}) — CPU {:.1}%{}",
-                        status, proc.pid, proc.name, ema_cpu,
-                        if scale != 1.0 { format!(", adaptive ×{:.2}", scale) } else { String::new() }
+                        status,
+                        proc.pid,
+                        proc.name,
+                        ema_cpu,
+                        if scale != 1.0 {
+                            format!(", adaptive ×{:.2}", scale)
+                        } else {
+                            String::new()
+                        }
                     ));
                 }
             }
@@ -252,7 +277,8 @@ impl PriorityGuardEngine {
         }
 
         // Restore processes that dropped below all triggers
-        let pids_to_remove: Vec<u32> = self.offenders
+        let pids_to_remove: Vec<u32> = self
+            .offenders
             .iter()
             .filter(|(pid, _)| !still_above.contains_key(pid))
             .map(|(pid, _)| *pid)
@@ -272,7 +298,12 @@ impl PriorityGuardEngine {
 
     /// Hybrid trigger: OR of absolute, per-core, and relative thresholds.
     /// Uses EMA-smoothed CPU value and adaptive scaling factor.
-    fn check_hybrid_trigger(ema_cpu: f32, config: &PriorityGuardConfig, median_cpu: f32, scale: f32) -> bool {
+    fn check_hybrid_trigger(
+        ema_cpu: f32,
+        config: &PriorityGuardConfig,
+        median_cpu: f32,
+        scale: f32,
+    ) -> bool {
         let abs_threshold = config.cpu_threshold * scale;
         let pc_threshold = config.per_core_threshold * scale;
 
@@ -284,8 +315,7 @@ impl PriorityGuardEngine {
         let pc_hit = per_core_cpu >= pc_threshold;
 
         // Relative: CPU significantly above the median of all running processes
-        let rel_hit = median_cpu > 0.0
-            && ema_cpu >= config.relative_multiplier * median_cpu;
+        let rel_hit = median_cpu > 0.0 && ema_cpu >= config.relative_multiplier * median_cpu;
 
         abs_hit || pc_hit || rel_hit
     }
@@ -316,7 +346,8 @@ impl PriorityGuardEngine {
 
     /// Get PIDs of all currently demoted processes.
     pub fn demoted_pids(&self) -> Vec<u32> {
-        self.offenders.iter()
+        self.offenders
+            .iter()
             .filter(|(_, e)| e.is_demoted())
             .map(|(pid, _)| *pid)
             .collect()
@@ -349,14 +380,19 @@ mod tests {
             per_core_threshold: 95.0,
             core_count: 8,
             relative_multiplier: 8.0,
-            ema_alpha: 1.0, // No smoothing in tests by default
+            ema_alpha: 1.0,       // No smoothing in tests by default
             grace_period_secs: 0, // No grace period in tests by default
             adaptive_sensitivity: 0.0,
         }
     }
 
     fn make_proc(pid: u32, name: &str, cpu: f32) -> ProcessInfo {
-        ProcessInfo { pid, name: name.to_string(), cpu, memory: 0 }
+        ProcessInfo {
+            pid,
+            name: name.to_string(),
+            cpu,
+            memory: 0,
+        }
     }
 
     #[test]
@@ -443,7 +479,10 @@ mod tests {
     fn cleanup_clears_all() {
         let mut engine = PriorityGuardEngine::new();
         let config = make_config(true, 80.0, 3);
-        engine.tick(&[make_proc(1, "a.exe", 99.0), make_proc(2, "b.exe", 99.0)], &config);
+        engine.tick(
+            &[make_proc(1, "a.exe", 99.0), make_proc(2, "b.exe", 99.0)],
+            &config,
+        );
         assert_eq!(engine.offenders.len(), 2);
         engine.cleanup();
         assert!(engine.offenders.is_empty());
@@ -452,10 +491,16 @@ mod tests {
     #[test]
     fn disable_triggers_cleanup() {
         let mut engine = PriorityGuardEngine::new();
-        engine.tick(&[make_proc(1, "hog.exe", 99.0)], &make_config(true, 80.0, 3));
+        engine.tick(
+            &[make_proc(1, "hog.exe", 99.0)],
+            &make_config(true, 80.0, 3),
+        );
         assert_eq!(engine.offenders.len(), 1);
         // Disable
-        engine.tick(&[make_proc(1, "hog.exe", 99.0)], &make_config(false, 80.0, 3));
+        engine.tick(
+            &[make_proc(1, "hog.exe", 99.0)],
+            &make_config(false, 80.0, 3),
+        );
         assert!(engine.offenders.is_empty());
     }
 
@@ -497,7 +542,10 @@ mod tests {
 
         // Tick 2: spike to 95% — EMA = 0.3*95 + 0.7*5 = 32%
         engine.tick(&[make_proc(1, "app.exe", 95.0)], &config);
-        assert!(engine.offenders.is_empty(), "EMA should dampen single spike below threshold");
+        assert!(
+            engine.offenders.is_empty(),
+            "EMA should dampen single spike below threshold"
+        );
 
         // Tick 3: back to 5% — EMA drops further
         engine.tick(&[make_proc(1, "app.exe", 5.0)], &config);
@@ -527,7 +575,10 @@ mod tests {
 
         // Process appears with high CPU but is within grace period
         engine.tick(&[make_proc(1, "new.exe", 99.0)], &config);
-        assert!(engine.offenders.is_empty(), "new process should be in grace period");
+        assert!(
+            engine.offenders.is_empty(),
+            "new process should be in grace period"
+        );
     }
 
     // --- Foreground protection tests ---
@@ -539,7 +590,10 @@ mod tests {
 
         // PID 1 is the foreground process
         engine.tick_with_foreground(&[make_proc(1, "fg.exe", 99.0)], &config, Some(1));
-        assert!(engine.offenders.is_empty(), "foreground PID should be skipped");
+        assert!(
+            engine.offenders.is_empty(),
+            "foreground PID should be skipped"
+        );
     }
 
     #[test]
@@ -553,7 +607,10 @@ mod tests {
 
         // Now it becomes foreground — should be removed from offenders
         engine.tick_with_foreground(&[make_proc(1, "app.exe", 99.0)], &config, Some(1));
-        assert!(engine.offenders.is_empty(), "foreground process should be restored");
+        assert!(
+            engine.offenders.is_empty(),
+            "foreground process should be restored"
+        );
     }
 
     // --- Repeat offender tests ---
@@ -578,35 +635,44 @@ mod fuzz_tests {
     use proptest::prelude::*;
 
     fn arb_process() -> impl Strategy<Value = ProcessInfo> {
-        (1u32..10000, "\\PC{1,20}", 0.0f32..200.0f32, any::<u64>())
-            .prop_map(|(pid, name, cpu, mem)| ProcessInfo { pid, name, cpu, memory: mem })
+        (1u32..10000, "\\PC{1,20}", 0.0f32..200.0f32, any::<u64>()).prop_map(
+            |(pid, name, cpu, mem)| ProcessInfo {
+                pid,
+                name,
+                cpu,
+                memory: mem,
+            },
+        )
     }
 
     fn arb_config() -> impl Strategy<Value = PriorityGuardConfig> {
         (
-            any::<bool>(),          // enabled
-            1.0f32..100.0f32,       // cpu_threshold
-            0u64..10,               // duration_secs
-            0.0f32..100.0f32,       // per_core_threshold
-            1u8..32,                // core_count
-            1.0f32..20.0f32,        // relative_multiplier
-            0.01f32..1.0f32,        // ema_alpha
-            0u64..10,               // grace_period_secs
-            0.0f32..1.0f32,         // adaptive_sensitivity
-        ).prop_map(|(enabled, cpu, dur, per_core, cores, rel, ema, grace, adapt)| {
-            PriorityGuardConfig {
-                enabled,
-                cpu_threshold: cpu,
-                duration_secs: dur,
-                user_exemptions: vec![],
-                per_core_threshold: per_core,
-                core_count: cores,
-                relative_multiplier: rel,
-                ema_alpha: ema,
-                grace_period_secs: grace,
-                adaptive_sensitivity: adapt,
-            }
-        })
+            any::<bool>(),    // enabled
+            1.0f32..100.0f32, // cpu_threshold
+            0u64..10,         // duration_secs
+            0.0f32..100.0f32, // per_core_threshold
+            1u8..32,          // core_count
+            1.0f32..20.0f32,  // relative_multiplier
+            0.01f32..1.0f32,  // ema_alpha
+            0u64..10,         // grace_period_secs
+            0.0f32..1.0f32,   // adaptive_sensitivity
+        )
+            .prop_map(
+                |(enabled, cpu, dur, per_core, cores, rel, ema, grace, adapt)| {
+                    PriorityGuardConfig {
+                        enabled,
+                        cpu_threshold: cpu,
+                        duration_secs: dur,
+                        user_exemptions: vec![],
+                        per_core_threshold: per_core,
+                        core_count: cores,
+                        relative_multiplier: rel,
+                        ema_alpha: ema,
+                        grace_period_secs: grace,
+                        adaptive_sensitivity: adapt,
+                    }
+                },
+            )
     }
 
     proptest! {

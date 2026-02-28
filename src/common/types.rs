@@ -1,6 +1,6 @@
+use ratatui::widgets::TableState;
 /// Shared types across the application
 use std::collections::HashMap;
-use ratatui::widgets::TableState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortColumn {
@@ -174,13 +174,16 @@ impl ProcessListState {
 
     /// Rebuild formatted row cache from current process list.
     pub fn rebuild_formatted_rows(&mut self) {
-        let min_cpu = self.processes.iter()
+        let min_cpu = self
+            .processes
+            .iter()
             .map(|p| p.cpu)
             .filter(|&c| c > 0.0)
             .fold(f32::MAX, f32::min);
         let min_cpu = if min_cpu == f32::MAX { 0.0 } else { min_cpu };
 
-        self.formatted_rows.resize_with(self.processes.len(), Default::default);
+        self.formatted_rows
+            .resize_with(self.processes.len(), Default::default);
         for (i, proc) in self.processes.iter().enumerate() {
             let row = &mut self.formatted_rows[i];
             row[0].clear();
@@ -190,17 +193,30 @@ impl ProcessListState {
             row[2].clear();
             std::fmt::Write::write_fmt(&mut row[2], format_args!("{:.2}%", proc.cpu)).unwrap();
             row[3].clear();
-            std::fmt::Write::write_fmt(&mut row[3], format_args!("{:.1} MB", proc.memory as f64 / 1024.0 / 1024.0)).unwrap();
+            std::fmt::Write::write_fmt(
+                &mut row[3],
+                format_args!("{:.1} MB", proc.memory as f64 / 1024.0 / 1024.0),
+            )
+            .unwrap();
             row[4].clear();
             if min_cpu > 0.0 {
                 let rel = proc.cpu / min_cpu;
                 const ALPHA: f32 = 0.3;
                 const MIN_SAMPLES: u32 = 5;
-                let entry = self.rel_cpu_avg.entry(proc.pid)
-                    .and_modify(|(a, n)| { *a = ALPHA * rel + (1.0 - ALPHA) * *a; *n += 1; })
+                let entry = self
+                    .rel_cpu_avg
+                    .entry(proc.pid)
+                    .and_modify(|(a, n)| {
+                        *a = ALPHA * rel + (1.0 - ALPHA) * *a;
+                        *n += 1;
+                    })
                     .or_insert((rel, 1));
                 if entry.1 >= MIN_SAMPLES {
-                    std::fmt::Write::write_fmt(&mut row[4], format_args!("{:.1}x ({:.1}x)", rel, entry.0)).unwrap();
+                    std::fmt::Write::write_fmt(
+                        &mut row[4],
+                        format_args!("{:.1}x ({:.1}x)", rel, entry.0),
+                    )
+                    .unwrap();
                 } else {
                     std::fmt::Write::write_fmt(&mut row[4], format_args!("{:.1}x", rel)).unwrap();
                 }
@@ -276,12 +292,15 @@ mod tests {
     // --- rebuild_formatted_rows ---
 
     fn make_procs(specs: &[(u32, &str, f32, u64)]) -> Vec<ProcessInfo> {
-        specs.iter().map(|(pid, name, cpu, mem)| ProcessInfo {
-            pid: *pid,
-            name: name.to_string(),
-            cpu: *cpu,
-            memory: *mem,
-        }).collect()
+        specs
+            .iter()
+            .map(|(pid, name, cpu, mem)| ProcessInfo {
+                pid: *pid,
+                name: name.to_string(),
+                cpu: *cpu,
+                memory: *mem,
+            })
+            .collect()
     }
 
     #[test]
@@ -331,7 +350,11 @@ mod tests {
             state.rebuild_formatted_rows();
         }
         // After 5 calls, should show "X.Xx (Y.Yx)" format with parentheses
-        assert!(state.formatted_rows[0][4].contains('('), "expected EMA after 5 samples: {}", state.formatted_rows[0][4]);
+        assert!(
+            state.formatted_rows[0][4].contains('('),
+            "expected EMA after 5 samples: {}",
+            state.formatted_rows[0][4]
+        );
     }
 
     #[test]
@@ -342,7 +365,11 @@ mod tests {
         for _ in 0..4 {
             state.rebuild_formatted_rows();
         }
-        assert!(!state.formatted_rows[0][4].contains('('), "no EMA before 5 samples: {}", state.formatted_rows[0][4]);
+        assert!(
+            !state.formatted_rows[0][4].contains('('),
+            "no EMA before 5 samples: {}",
+            state.formatted_rows[0][4]
+        );
     }
 
     #[test]
@@ -388,9 +415,14 @@ mod fuzz_tests {
     use proptest::prelude::*;
 
     fn arb_process_info() -> impl Strategy<Value = ProcessInfo> {
-        (any::<u32>(), "\\PC{1,20}", 0.0f32..10000.0f32, any::<u64>()).prop_map(|(pid, name, cpu, memory)| {
-            ProcessInfo { pid, name, cpu, memory }
-        })
+        (any::<u32>(), "\\PC{1,20}", 0.0f32..10000.0f32, any::<u64>()).prop_map(
+            |(pid, name, cpu, memory)| ProcessInfo {
+                pid,
+                name,
+                cpu,
+                memory,
+            },
+        )
     }
 
     proptest! {

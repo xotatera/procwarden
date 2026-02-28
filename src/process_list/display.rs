@@ -16,16 +16,32 @@ pub fn sort_processes(
         }
         SortColumn::Name => {
             if ascending {
-                procs.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+                procs.sort_by(|a, b| {
+                    a.name
+                        .to_ascii_lowercase()
+                        .cmp(&b.name.to_ascii_lowercase())
+                });
             } else {
-                procs.sort_by(|a, b| b.name.to_ascii_lowercase().cmp(&a.name.to_ascii_lowercase()));
+                procs.sort_by(|a, b| {
+                    b.name
+                        .to_ascii_lowercase()
+                        .cmp(&a.name.to_ascii_lowercase())
+                });
             }
         }
         SortColumn::Cpu => {
             if ascending {
-                procs.sort_by(|a, b| a.cpu.partial_cmp(&b.cpu).unwrap_or(std::cmp::Ordering::Equal));
+                procs.sort_by(|a, b| {
+                    a.cpu
+                        .partial_cmp(&b.cpu)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             } else {
-                procs.sort_by(|a, b| b.cpu.partial_cmp(&a.cpu).unwrap_or(std::cmp::Ordering::Equal));
+                procs.sort_by(|a, b| {
+                    b.cpu
+                        .partial_cmp(&a.cpu)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             }
         }
         SortColumn::Memory => {
@@ -68,7 +84,11 @@ pub fn filter_processes(
 }
 
 /// Pure function: Get header string for a sort column with indicator
-pub fn get_column_header(column: SortColumn, current_column: SortColumn, ascending: bool) -> &'static str {
+pub fn get_column_header(
+    column: SortColumn,
+    current_column: SortColumn,
+    ascending: bool,
+) -> &'static str {
     if column != current_column {
         return column.label();
     }
@@ -105,9 +125,24 @@ mod tests {
 
     fn make_procs() -> Vec<ProcessInfo> {
         vec![
-            ProcessInfo { pid: 10, name: "alpha".into(), cpu: 5.0, memory: 300 },
-            ProcessInfo { pid: 1, name: "charlie".into(), cpu: 90.0, memory: 100 },
-            ProcessInfo { pid: 5, name: "bravo".into(), cpu: 0.5, memory: 200 },
+            ProcessInfo {
+                pid: 10,
+                name: "alpha".into(),
+                cpu: 5.0,
+                memory: 300,
+            },
+            ProcessInfo {
+                pid: 1,
+                name: "charlie".into(),
+                cpu: 90.0,
+                memory: 100,
+            },
+            ProcessInfo {
+                pid: 5,
+                name: "bravo".into(),
+                cpu: 0.5,
+                memory: 200,
+            },
         ]
     }
 
@@ -178,9 +213,24 @@ mod tests {
     #[test]
     fn sort_by_name_case_insensitive() {
         let procs = vec![
-            ProcessInfo { pid: 1, name: "Zebra.exe".into(), cpu: 0.0, memory: 0 },
-            ProcessInfo { pid: 2, name: "alpha.exe".into(), cpu: 0.0, memory: 0 },
-            ProcessInfo { pid: 3, name: "Beta.exe".into(), cpu: 0.0, memory: 0 },
+            ProcessInfo {
+                pid: 1,
+                name: "Zebra.exe".into(),
+                cpu: 0.0,
+                memory: 0,
+            },
+            ProcessInfo {
+                pid: 2,
+                name: "alpha.exe".into(),
+                cpu: 0.0,
+                memory: 0,
+            },
+            ProcessInfo {
+                pid: 3,
+                name: "Beta.exe".into(),
+                cpu: 0.0,
+                memory: 0,
+            },
         ];
         let result = sort_processes(procs, SortColumn::Name, true);
         let names: Vec<&str> = result.iter().map(|p| p.name.as_str()).collect();
@@ -201,7 +251,12 @@ mod tests {
     fn filter_hide_self_true_removes_self_pid() {
         let self_pid = std::process::id();
         let mut procs = make_procs();
-        procs.push(ProcessInfo { pid: self_pid, name: "self".into(), cpu: 0.0, memory: 0 });
+        procs.push(ProcessInfo {
+            pid: self_pid,
+            name: "self".into(),
+            cpu: 0.0,
+            memory: 0,
+        });
         let result = filter_processes(procs, true, "");
         assert!(result.iter().all(|p| p.pid != self_pid));
     }
@@ -251,23 +306,41 @@ mod tests {
 
     #[test]
     fn header_active_ascending() {
-        assert_eq!(get_column_header(SortColumn::Cpu, SortColumn::Cpu, true), "CPU ↑");
+        assert_eq!(
+            get_column_header(SortColumn::Cpu, SortColumn::Cpu, true),
+            "CPU ↑"
+        );
     }
 
     #[test]
     fn header_active_descending() {
-        assert_eq!(get_column_header(SortColumn::Cpu, SortColumn::Cpu, false), "CPU ↓");
+        assert_eq!(
+            get_column_header(SortColumn::Cpu, SortColumn::Cpu, false),
+            "CPU ↓"
+        );
     }
 
     #[test]
     fn header_inactive() {
-        assert_eq!(get_column_header(SortColumn::Name, SortColumn::Cpu, true), "NAME");
+        assert_eq!(
+            get_column_header(SortColumn::Name, SortColumn::Cpu, true),
+            "NAME"
+        );
     }
 
     #[test]
     fn header_all_columns_inactive() {
-        for col in [SortColumn::Pid, SortColumn::Name, SortColumn::Cpu, SortColumn::Memory] {
-            let other = if col == SortColumn::Pid { SortColumn::Name } else { SortColumn::Pid };
+        for col in [
+            SortColumn::Pid,
+            SortColumn::Name,
+            SortColumn::Cpu,
+            SortColumn::Memory,
+        ] {
+            let other = if col == SortColumn::Pid {
+                SortColumn::Name
+            } else {
+                SortColumn::Pid
+            };
             let h = get_column_header(col, other, true);
             assert!(!h.contains('↑') && !h.contains('↓'));
         }
@@ -335,9 +408,14 @@ mod fuzz_tests {
     }
 
     fn arb_process_info() -> impl Strategy<Value = ProcessInfo> {
-        (any::<u32>(), ".*", 0.0f32..1000.0f32, any::<u64>()).prop_map(|(pid, name, cpu, memory)| {
-            ProcessInfo { pid, name, cpu, memory }
-        })
+        (any::<u32>(), ".*", 0.0f32..1000.0f32, any::<u64>()).prop_map(
+            |(pid, name, cpu, memory)| ProcessInfo {
+                pid,
+                name,
+                cpu,
+                memory,
+            },
+        )
     }
 
     fn arb_process_list() -> impl Strategy<Value = Vec<ProcessInfo>> {

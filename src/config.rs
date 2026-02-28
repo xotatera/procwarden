@@ -1,7 +1,7 @@
 //! Persistent settings: load/save to JSON file in the user's config directory.
 
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Persisted subset of settings. Fields match SettingsState.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,8 +57,8 @@ pub fn load() -> PersistedSettings {
 /// Save settings to disk. Creates parent directories if needed.
 /// Returns Ok(()) on success, Err on failure.
 pub fn save(settings: &PersistedSettings) -> anyhow::Result<()> {
-    let path = settings_path()
-        .ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?;
+    let path =
+        settings_path().ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -216,7 +216,9 @@ mod tests {
         // On most systems, config_dir should exist
         let path = settings_path();
         if let Some(p) = &path {
-            assert!(p.ends_with("procwarden/settings.json") || p.ends_with("procwarden\\settings.json"));
+            assert!(
+                p.ends_with("procwarden/settings.json") || p.ends_with("procwarden\\settings.json")
+            );
         }
     }
 
@@ -233,7 +235,11 @@ mod tests {
             priority_guard_ema_alpha: 0.3,
             priority_guard_grace_period_secs: 5,
             priority_guard_adaptive_sensitivity: 0.4,
-            user_exemptions: vec!["chrome.exe".to_string(), "firefox.exe".to_string(), "blender.exe".to_string()],
+            user_exemptions: vec![
+                "chrome.exe".to_string(),
+                "firefox.exe".to_string(),
+                "blender.exe".to_string(),
+            ],
         };
         let json = serde_json::to_string(&s).unwrap();
         let loaded: PersistedSettings = serde_json::from_str(&json).unwrap();

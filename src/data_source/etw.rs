@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Result};
 use crate::common::ProcessInfo;
 use crate::data_source::DataSource;
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::mem;
@@ -25,16 +25,13 @@ fn to_wide(s: &str) -> Vec<u16> {
 const KERNEL_LOGGER_NAME: &str = "NT Kernel Logger";
 
 /// SystemTraceControlGuid – required as Wnode.Guid for kernel trace sessions.
-const SYSTEM_TRACE_CONTROL_GUID: GUID =
-    GUID::from_u128(0x9e814aad_3204_11d2_9a82_006008a86939);
+const SYSTEM_TRACE_CONTROL_GUID: GUID = GUID::from_u128(0x9e814aad_3204_11d2_9a82_006008a86939);
 
 /// Process sub-provider GUID – used to identify process events in callbacks.
-const PROCESS_GUID: GUID =
-    GUID::from_u128(0x3d6fa8d0_fe05_11d0_9dda_00c04fd7ba7c);
+const PROCESS_GUID: GUID = GUID::from_u128(0x3d6fa8d0_fe05_11d0_9dda_00c04fd7ba7c);
 
 /// Thread sub-provider GUID – used to identify thread and CSwitch events.
-const THREAD_GUID: GUID =
-    GUID::from_u128(0x3d6fa8d1_fe05_11d0_9dda_00c04fd7ba7c);
+const THREAD_GUID: GUID = GUID::from_u128(0x3d6fa8d1_fe05_11d0_9dda_00c04fd7ba7c);
 
 /// EnableFlags for kernel trace: process + thread + context switch.
 const ENABLE_FLAGS: u32 = 0x01 | 0x02 | 0x10; // PROCESS | THREAD | CSWITCH
@@ -205,7 +202,9 @@ impl Drop for EtwDataSource {
 // ---------------------------------------------------------------------------
 
 /// Allocate an `EVENT_TRACE_PROPERTIES` buffer with room for the session name.
-unsafe fn alloc_properties(session_name_wide: &[u16]) -> Result<(*mut EVENT_TRACE_PROPERTIES, std::alloc::Layout)> {
+unsafe fn alloc_properties(
+    session_name_wide: &[u16],
+) -> Result<(*mut EVENT_TRACE_PROPERTIES, std::alloc::Layout)> {
     let name_bytes = std::mem::size_of_val(session_name_wide);
     let total = mem::size_of::<EVENT_TRACE_PROPERTIES>() + name_bytes;
     let layout = std::alloc::Layout::from_size_align(total, 8)
@@ -224,7 +223,9 @@ unsafe fn alloc_properties(session_name_wide: &[u16]) -> Result<(*mut EVENT_TRAC
 fn stop_trace_session() {
     unsafe {
         let name = to_wide(KERNEL_LOGGER_NAME);
-        let Ok((props, layout)) = alloc_properties(&name) else { return };
+        let Ok((props, layout)) = alloc_properties(&name) else {
+            return;
+        };
         let _ = ControlTraceW(
             CONTROLTRACE_HANDLE::default(),
             PCWSTR(name.as_ptr()),
@@ -455,9 +456,7 @@ struct EtwSession {
 unsafe impl Send for EtwSession {}
 
 /// Phase 1: create and open the trace session.
-fn setup_etw_session(
-    shared: &Arc<EtwSharedState>,
-) -> Result<EtwSession> {
+fn setup_etw_session(shared: &Arc<EtwSharedState>) -> Result<EtwSession> {
     unsafe {
         let session_name = to_wide(KERNEL_LOGGER_NAME);
         let (props, layout) = alloc_properties(&session_name)?;
@@ -469,11 +468,7 @@ fn setup_etw_session(
         (*props).LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
 
         let mut trace_handle = CONTROLTRACE_HANDLE::default();
-        let err = StartTraceW(
-            &mut trace_handle,
-            PCWSTR(session_name.as_ptr()),
-            props,
-        );
+        let err = StartTraceW(&mut trace_handle, PCWSTR(session_name.as_ptr()), props);
 
         if err.0 != 0 {
             let msg = match err.0 {
@@ -499,7 +494,7 @@ fn setup_etw_session(
 
         let open_handle = OpenTraceW(&mut logfile);
 
-        if open_handle.0 == u64::MAX {
+        if open_handle.Value == u64::MAX {
             let _ = ControlTraceW(
                 trace_handle,
                 PCWSTR::null(),
@@ -654,8 +649,8 @@ mod tests {
         let name = to_wide("TestSession");
         unsafe {
             let (props, layout) = alloc_properties(&name).unwrap();
-            let expected_total = mem::size_of::<EVENT_TRACE_PROPERTIES>()
-                + name.len() * mem::size_of::<u16>();
+            let expected_total =
+                mem::size_of::<EVENT_TRACE_PROPERTIES>() + name.len() * mem::size_of::<u16>();
             assert_eq!((*props).Wnode.BufferSize, expected_total as u32);
             assert_eq!(
                 (*props).LoggerNameOffset,
@@ -723,8 +718,7 @@ mod tests {
         let state = make_test_state();
         unsafe {
             let mut record: EVENT_RECORD = mem::zeroed();
-            record.EventHeader.ProviderId =
-                GUID::from_u128(0x00000000_0000_0000_0000_000000000000);
+            record.EventHeader.ProviderId = GUID::from_u128(0x00000000_0000_0000_0000_000000000000);
             record.UserContext = &state as *const _ as *mut c_void;
             event_record_callback(&mut record);
         }
@@ -1044,7 +1038,12 @@ mod tests {
     fn process_end_cleans_up_cpu_ticks() {
         let state = make_test_state();
         state.names.lock().unwrap().insert(42, "test.exe".into());
-        state.cswitch.lock().unwrap().pid_cpu_ticks.insert(42, 99999);
+        state
+            .cswitch
+            .lock()
+            .unwrap()
+            .pid_cpu_ticks
+            .insert(42, 99999);
 
         let ptr_size = mem::size_of::<usize>();
         let payload_len = ptr_size + 4;
@@ -1062,7 +1061,12 @@ mod tests {
         }
 
         assert!(!state.names.lock().unwrap().contains_key(&42));
-        assert!(!state.cswitch.lock().unwrap().pid_cpu_ticks.contains_key(&42));
+        assert!(!state
+            .cswitch
+            .lock()
+            .unwrap()
+            .pid_cpu_ticks
+            .contains_key(&42));
     }
 
     // -- Worker thread / session setup --
@@ -1073,7 +1077,7 @@ mod tests {
         stop_trace_session();
         match setup_etw_session(&shared) {
             Ok(session) => {
-                assert_ne!(session.open_handle.0, u64::MAX);
+                assert_ne!(session.open_handle.Value, u64::MAX);
                 assert!(!session.props.is_null());
                 cleanup_session(session);
             }
@@ -1107,7 +1111,10 @@ mod tests {
         });
 
         let result = rx.recv_timeout(std::time::Duration::from_secs(5));
-        assert!(result.is_ok(), "worker thread did not signal readiness in time");
+        assert!(
+            result.is_ok(),
+            "worker thread did not signal readiness in time"
+        );
 
         if result.unwrap().is_ok() {
             shutdown.store(true, Ordering::Relaxed);

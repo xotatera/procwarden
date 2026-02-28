@@ -1,14 +1,14 @@
-use anyhow::Result;
 use crate::common::ProcessInfo;
+use anyhow::Result;
 
 pub mod polling;
 
 #[cfg(feature = "etw")]
 pub mod etw;
 
-pub use polling::PollingDataSource;
 #[cfg(feature = "etw")]
 pub use etw::EtwDataSource;
+pub use polling::PollingDataSource;
 
 /// Trait for process data sources (polling, ETW, etc.)
 pub trait DataSource {

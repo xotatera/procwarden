@@ -1,3 +1,6 @@
 pub mod types;
 
-pub use types::{ProcessInfo, SortColumn, UIMode, DataSourceMode, PendingAction, SettingsState, ProcessListState, FormattedRow, ExemptionEditorState};
+pub use types::{
+    DataSourceMode, ExemptionEditorState, FormattedRow, PendingAction, ProcessInfo,
+    ProcessListState, SettingsState, SortColumn, UIMode,
+};

@@ -1,5 +1,5 @@
+use crate::common::{ProcessListState, SortColumn};
 use crossterm::event::KeyCode;
-use crate::common::{SortColumn, ProcessListState};
 
 /// Handle process list navigation and sorting keys
 pub fn handle_key(state: &mut ProcessListState, key: KeyCode) {

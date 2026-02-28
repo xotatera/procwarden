@@ -6,12 +6,12 @@
 //! Usage: cargo build --release && target\release\cpu_comparison.exe
 
 use std::os::windows::process::CommandExt;
-use std::process::{Command, Child};
+use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use sysinfo::{ProcessesToUpdate, System, ProcessRefreshKind};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
 
 const CREATE_NEW_CONSOLE: u32 = 0x00000010;
 
@@ -49,7 +49,9 @@ struct ScenarioResult {
 
 fn find_pid_by_name(system: &System, name: &str) -> Option<u32> {
     let name_lower = name.to_ascii_lowercase();
-    system.processes().iter()
+    system
+        .processes()
+        .iter()
         .find(|(_, p)| p.name().to_string_lossy().to_ascii_lowercase() == name_lower)
         .map(|(pid, _)| pid.as_u32())
 }
@@ -75,7 +77,10 @@ fn run_scenario(
     name: &'static str,
     stress_threads: usize,
 ) -> ScenarioResult {
-    println!("  Running scenario: {} ({} stress threads)...", name, stress_threads);
+    println!(
+        "  Running scenario: {} ({} stress threads)...",
+        name, stress_threads
+    );
 
     // Spawn stress workers
     let running = Arc::new(AtomicBool::new(true));
@@ -119,8 +124,14 @@ fn run_scenario(
     let tm_raw_avg: f32 = tm_samples.iter().sum::<f32>() / tm_samples.len() as f32;
     let pl_nonzero = pl_samples.iter().filter(|&&x| x > 0.001).count();
     let tm_nonzero = tm_samples.iter().filter(|&&x| x > 0.001).count();
-    println!("    PL: avg={:.4}%, non-zero={}/{}", pl_raw_avg, pl_nonzero, MEASURE_SAMPLES);
-    println!("    TM: avg={:.4}%, non-zero={}/{}", tm_raw_avg, tm_nonzero, MEASURE_SAMPLES);
+    println!(
+        "    PL: avg={:.4}%, non-zero={}/{}",
+        pl_raw_avg, pl_nonzero, MEASURE_SAMPLES
+    );
+    println!(
+        "    TM: avg={:.4}%, non-zero={}/{}",
+        tm_raw_avg, tm_nonzero, MEASURE_SAMPLES
+    );
 
     ScenarioResult {
         name,
@@ -158,14 +169,14 @@ fn main() {
         pid
     } else {
         println!("Launching Task Manager...");
-        #[allow(clippy::zombie_processes)] // Intentionally fire-and-forget; Task Manager runs independently
+        #[allow(clippy::zombie_processes)]
+        // Intentionally fire-and-forget; Task Manager runs independently
         let _ = Command::new("C:\\Windows\\System32\\Taskmgr.exe")
             .spawn()
             .expect("Failed to launch Task Manager");
         thread::sleep(Duration::from_secs(3));
         system.refresh_processes(ProcessesToUpdate::All);
-        find_pid_by_name(&system, "Taskmgr.exe")
-            .expect("Task Manager not found after launch")
+        find_pid_by_name(&system, "Taskmgr.exe").expect("Task Manager not found after launch")
     };
     println!("Task Manager PID: {}", tm_pid);
 
@@ -183,7 +194,10 @@ fn main() {
     system.refresh_processes(ProcessesToUpdate::All);
     let pl_visible = system.process(sysinfo::Pid::from_u32(pl_pid)).is_some();
     let tm_visible = system.process(sysinfo::Pid::from_u32(tm_pid)).is_some();
-    println!("ProcWarden visible: {}, Task Manager visible: {}", pl_visible, tm_visible);
+    println!(
+        "ProcWarden visible: {}, Task Manager visible: {}",
+        pl_visible, tm_visible
+    );
 
     if !pl_visible {
         eprintln!("ERROR: ProcWarden not visible to sysinfo! Aborting.");
@@ -202,8 +216,22 @@ fn main() {
     // Run scenarios
     let results = vec![
         run_scenario(&mut system, pl_pid, tm_pid, num_cpus, "Idle", 0),
-        run_scenario(&mut system, pl_pid, tm_pid, num_cpus, "Moderate", moderate_threads),
-        run_scenario(&mut system, pl_pid, tm_pid, num_cpus, "Heavy", heavy_threads),
+        run_scenario(
+            &mut system,
+            pl_pid,
+            tm_pid,
+            num_cpus,
+            "Moderate",
+            moderate_threads,
+        ),
+        run_scenario(
+            &mut system,
+            pl_pid,
+            tm_pid,
+            num_cpus,
+            "Heavy",
+            heavy_threads,
+        ),
     ];
 
     // Cleanup
@@ -213,8 +241,14 @@ fn main() {
 
     // Print results
     println!("\n## Summary\n");
-    println!("| {:<8} | {:<11} | {:>12} | {:>12} | {:>6} |", "Scenario", "Metric", "ProcWarden", "TaskMgr", "Ratio");
-    println!("|{:-<10}|{:-<13}|{:-<14}|{:-<14}|{:-<8}|", "", "", "", "", "");
+    println!(
+        "| {:<8} | {:<11} | {:>12} | {:>12} | {:>6} |",
+        "Scenario", "Metric", "ProcWarden", "TaskMgr", "Ratio"
+    );
+    println!(
+        "|{:-<10}|{:-<13}|{:-<14}|{:-<14}|{:-<8}|",
+        "", "", "", "", ""
+    );
     for r in &results {
         let ratio_avg = if r.tm.avg > 0.001 {
             format!("{:.2}x", r.pl.avg / r.tm.avg)
@@ -230,14 +264,42 @@ fn main() {
         };
         let pl_minmax = format!("{:.4}-{:.4}%", r.pl.min, r.pl.max);
         let tm_minmax = format!("{:.4}-{:.4}%", r.tm.min, r.tm.max);
-        println!("| {:<8} | {:<11} | {:>12} | {:>12} | {:>6} |", r.name, "avg", format!("{:.4}%", r.pl.avg), format!("{:.4}%", r.tm.avg), ratio_avg);
-        println!("| {:<8} | {:<11} | {:>12} | {:>12} | {:>6} |", "", "median", format!("{:.4}%", r.pl.median), format!("{:.4}%", r.tm.median), "");
-        println!("| {:<8} | {:<11} | {:>12} | {:>12} | {:>6} |", "", "p95", format!("{:.4}%", r.pl.p95), format!("{:.4}%", r.tm.p95), ratio_p95);
-        println!("| {:<8} | {:<11} | {:>12} | {:>12} | {:>6} |", "", "min-max", pl_minmax, tm_minmax, "");
+        println!(
+            "| {:<8} | {:<11} | {:>12} | {:>12} | {:>6} |",
+            r.name,
+            "avg",
+            format!("{:.4}%", r.pl.avg),
+            format!("{:.4}%", r.tm.avg),
+            ratio_avg
+        );
+        println!(
+            "| {:<8} | {:<11} | {:>12} | {:>12} | {:>6} |",
+            "",
+            "median",
+            format!("{:.4}%", r.pl.median),
+            format!("{:.4}%", r.tm.median),
+            ""
+        );
+        println!(
+            "| {:<8} | {:<11} | {:>12} | {:>12} | {:>6} |",
+            "",
+            "p95",
+            format!("{:.4}%", r.pl.p95),
+            format!("{:.4}%", r.tm.p95),
+            ratio_p95
+        );
+        println!(
+            "| {:<8} | {:<11} | {:>12} | {:>12} | {:>6} |",
+            "", "min-max", pl_minmax, tm_minmax, ""
+        );
     }
 
-    println!("\nConfig: sample={}ms, measure={} samples ({}s), warmup={} samples ({}s)",
+    println!(
+        "\nConfig: sample={}ms, measure={} samples ({}s), warmup={} samples ({}s)",
         SAMPLE_INTERVAL.as_millis(),
-        MEASURE_SAMPLES, MEASURE_SAMPLES as u64 * SAMPLE_INTERVAL.as_millis() as u64 / 1000,
-        WARMUP_SAMPLES, WARMUP_SAMPLES as u64 * SAMPLE_INTERVAL.as_millis() as u64 / 1000);
+        MEASURE_SAMPLES,
+        MEASURE_SAMPLES as u64 * SAMPLE_INTERVAL.as_millis() as u64 / 1000,
+        WARMUP_SAMPLES,
+        WARMUP_SAMPLES as u64 * SAMPLE_INTERVAL.as_millis() as u64 / 1000
+    );
 }

@@ -15,18 +15,20 @@ pub fn is_compare_active(filter_query: &str, row_count: usize) -> bool {
     !filter_query.is_empty() && row_count >= 2
 }
 
+use crate::common::{
+    DataSourceMode, ExemptionEditorState, PendingAction, ProcessListState, SettingsState, UIMode,
+};
+use crate::priority_guard::windows_api::PRIORITY_CLASSES;
+use crate::process_list::get_column_header;
+use crate::settings::get_hide_self_status;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Table, Row},
+    widgets::{Block, Borders, Paragraph, Row, Table},
     Frame,
 };
 use std::collections::HashSet;
-use crate::common::{UIMode, PendingAction, ProcessListState, SettingsState, DataSourceMode, ExemptionEditorState};
-use crate::process_list::get_column_header;
-use crate::settings::get_hide_self_status;
-use crate::priority_guard::windows_api::PRIORITY_CLASSES;
 
 use crate::priority_guard::LogEntry;
 
@@ -58,11 +60,25 @@ pub fn render_ui(
     action_state: &ActionState<'_>,
 ) {
     match ui_mode {
-        UIMode::Processes => render_process_list(f, process_state, data_source_mode, pg_status, action_state.pending_action, action_state.suspended_pids),
+        UIMode::Processes => render_process_list(
+            f,
+            process_state,
+            data_source_mode,
+            pg_status,
+            action_state.pending_action,
+            action_state.suspended_pids,
+        ),
         UIMode::Settings => render_settings(f, settings),
         UIMode::Log => render_log(f, &pg_status.log_entries, log_scroll_offset),
         UIMode::PriorityPicker => {
-            render_process_list(f, process_state, data_source_mode, pg_status, action_state.pending_action, action_state.suspended_pids);
+            render_process_list(
+                f,
+                process_state,
+                data_source_mode,
+                pg_status,
+                action_state.pending_action,
+                action_state.suspended_pids,
+            );
             render_priority_picker(f, process_state, action_state.priority_picker_selected);
         }
         UIMode::ExemptionEditor => {
@@ -72,7 +88,14 @@ pub fn render_ui(
     }
 }
 
-pub fn render_process_list(f: &mut Frame, state: &mut ProcessListState, data_source_mode: DataSourceMode, pg_status: &PriorityGuardStatus, pending_action: &Option<PendingAction>, suspended_pids: &HashSet<u32>) {
+pub fn render_process_list(
+    f: &mut Frame,
+    state: &mut ProcessListState,
+    data_source_mode: DataSourceMode,
+    pg_status: &PriorityGuardStatus,
+    pending_action: &Option<PendingAction>,
+    suspended_pids: &HashSet<u32>,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -92,21 +115,29 @@ pub fn render_process_list(f: &mut Frame, state: &mut ProcessListState, data_sou
         DataSourceMode::Etw => vec![
             Span::styled(
                 "Process Warden",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 "[ETW]",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             ),
         ],
         DataSourceMode::PollingFallback => vec![
             Span::styled(
                 "Process Warden",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 "[POLLING FALLBACK - ETW unavailable, run as admin for real-time events]",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ),
         ],
     };
@@ -120,7 +151,9 @@ pub fn render_process_list(f: &mut Frame, state: &mut ProcessListState, data_sou
         };
         title_spans.push(Span::styled(
             pg_text,
-            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
         ));
     }
     let title = Paragraph::new(Line::from(title_spans))
@@ -129,12 +162,24 @@ pub fn render_process_list(f: &mut Frame, state: &mut ProcessListState, data_sou
     f.render_widget(title, chunks[0]);
 
     // Filter box
-    let filter_border_color = if state.filter_focused { Color::Cyan } else { Color::DarkGray };
-    let filter_content = build_filter_content(&state.filter_query, state.filter_cursor, state.filter_focused);
+    let filter_border_color = if state.filter_focused {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
+    let filter_content = build_filter_content(
+        &state.filter_query,
+        state.filter_cursor,
+        state.filter_focused,
+    );
     let count_suffix = if state.filter_query.is_empty() {
         format!("  [{} processes]", state.total_process_count)
     } else {
-        format!("  [{}/{}]", state.processes.len(), state.total_process_count)
+        format!(
+            "  [{}/{}]",
+            state.processes.len(),
+            state.total_process_count
+        )
     };
     let filter_widget = Paragraph::new(format!("{}{}", filter_content, count_suffix))
         .style(Style::default().fg(Color::White))
@@ -182,7 +227,13 @@ pub fn render_process_list(f: &mut Frame, state: &mut ProcessListState, data_sou
             };
 
             let cells: Vec<String> = if compare_active {
-                vec![row[0].clone(), name, row[2].clone(), row[3].clone(), row[4].clone()]
+                vec![
+                    row[0].clone(),
+                    name,
+                    row[2].clone(),
+                    row[3].clone(),
+                    row[4].clone(),
+                ]
             } else {
                 vec![row[0].clone(), name, row[2].clone(), row[3].clone()]
             };
@@ -190,16 +241,42 @@ pub fn render_process_list(f: &mut Frame, state: &mut ProcessListState, data_sou
         })
         .collect();
 
-    let pid_header = get_column_header(crate::common::SortColumn::Pid, state.sort_column, state.sort_ascending);
-    let name_header = get_column_header(crate::common::SortColumn::Name, state.sort_column, state.sort_ascending);
-    let cpu_header = get_column_header(crate::common::SortColumn::Cpu, state.sort_column, state.sort_ascending);
-    let memory_header = get_column_header(crate::common::SortColumn::Memory, state.sort_column, state.sort_ascending);
+    let pid_header = get_column_header(
+        crate::common::SortColumn::Pid,
+        state.sort_column,
+        state.sort_ascending,
+    );
+    let name_header = get_column_header(
+        crate::common::SortColumn::Name,
+        state.sort_column,
+        state.sort_ascending,
+    );
+    let cpu_header = get_column_header(
+        crate::common::SortColumn::Cpu,
+        state.sort_column,
+        state.sort_ascending,
+    );
+    let memory_header = get_column_header(
+        crate::common::SortColumn::Memory,
+        state.sort_column,
+        state.sort_ascending,
+    );
 
     let (header, widths): (Row, Vec<Constraint>) = if compare_active {
         (
-            Row::new(vec![pid_header, name_header, cpu_header, memory_header, "CPU (rel)"])
-                .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-                .bottom_margin(1),
+            Row::new(vec![
+                pid_header,
+                name_header,
+                cpu_header,
+                memory_header,
+                "CPU (rel)",
+            ])
+            .style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .bottom_margin(1),
             vec![
                 Constraint::Length(10),
                 Constraint::Percentage(40),
@@ -211,7 +288,11 @@ pub fn render_process_list(f: &mut Frame, state: &mut ProcessListState, data_sou
     } else {
         (
             Row::new(vec![pid_header, name_header, cpu_header, memory_header])
-                .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                .style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )
                 .bottom_margin(1),
             vec![
                 Constraint::Length(10),
@@ -232,15 +313,15 @@ pub fn render_process_list(f: &mut Frame, state: &mut ProcessListState, data_sou
     };
 
     let table = Table::new(rows, widths)
-    .header(header)
-    .block(Block::default().borders(Borders::ALL).title(table_title))
-    .style(Style::default().fg(Color::White))
-    .highlight_style(
-        Style::default()
-            .fg(Color::Black)
-            .bg(Color::Cyan)
-            .add_modifier(Modifier::BOLD),
-    );
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title(table_title))
+        .style(Style::default().fg(Color::White))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        );
 
     // Sync TableState with current selection so ratatui auto-scrolls
     state.table_state.select(Some(state.selected));
@@ -249,37 +330,43 @@ pub fn render_process_list(f: &mut Frame, state: &mut ProcessListState, data_sou
     // Help / confirmation bar
     let help_lines = if let Some(action) = pending_action {
         let (prompt, color) = match action {
-            PendingAction::Kill { pid, name } =>
-                (format!("Kill '{}' (PID {})? [Y/N]", name, pid), Color::Red),
-            PendingAction::Suspend { pid, name } =>
-                (format!("Suspend '{}' (PID {})? [Y/N]", name, pid), Color::Yellow),
-            PendingAction::Resume { pid, name } =>
-                (format!("Resume '{}' (PID {})? [Y/N]", name, pid), Color::Green),
+            PendingAction::Kill { pid, name } => {
+                (format!("Kill '{}' (PID {})? [Y/N]", name, pid), Color::Red)
+            }
+            PendingAction::Suspend { pid, name } => (
+                format!("Suspend '{}' (PID {})? [Y/N]", name, pid),
+                Color::Yellow,
+            ),
+            PendingAction::Resume { pid, name } => (
+                format!("Resume '{}' (PID {})? [Y/N]", name, pid),
+                Color::Green,
+            ),
         };
-        vec![Line::from(Span::styled(prompt, Style::default().fg(color).add_modifier(Modifier::BOLD)))]
+        vec![Line::from(Span::styled(
+            prompt,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ))]
     } else {
-        vec![
-            Line::from(vec![
-                Span::styled("↑↓/j k", Style::default().fg(Color::Cyan)),
-                Span::raw(" Nav  "),
-                Span::styled("←→", Style::default().fg(Color::Cyan)),
-                Span::raw(" Sort  "),
-                Span::styled("Tab /", Style::default().fg(Color::Cyan)),
-                Span::raw(" Filter  "),
-                Span::styled("x/Del", Style::default().fg(Color::Red)),
-                Span::raw(" Kill  "),
-                Span::styled("z", Style::default().fg(Color::Yellow)),
-                Span::raw(" Suspend  "),
-                Span::styled("p", Style::default().fg(Color::Magenta)),
-                Span::raw(" Priority  "),
-                Span::styled("s", Style::default().fg(Color::Cyan)),
-                Span::raw(" Settings  "),
-                Span::styled("l", Style::default().fg(Color::Cyan)),
-                Span::raw(" Log  "),
-                Span::styled("q", Style::default().fg(Color::Cyan)),
-                Span::raw(" Quit"),
-            ]),
-        ]
+        vec![Line::from(vec![
+            Span::styled("↑↓/j k", Style::default().fg(Color::Cyan)),
+            Span::raw(" Nav  "),
+            Span::styled("←→", Style::default().fg(Color::Cyan)),
+            Span::raw(" Sort  "),
+            Span::styled("Tab /", Style::default().fg(Color::Cyan)),
+            Span::raw(" Filter  "),
+            Span::styled("x/Del", Style::default().fg(Color::Red)),
+            Span::raw(" Kill  "),
+            Span::styled("z", Style::default().fg(Color::Yellow)),
+            Span::raw(" Suspend  "),
+            Span::styled("p", Style::default().fg(Color::Magenta)),
+            Span::raw(" Priority  "),
+            Span::styled("s", Style::default().fg(Color::Cyan)),
+            Span::raw(" Settings  "),
+            Span::styled("l", Style::default().fg(Color::Cyan)),
+            Span::raw(" Log  "),
+            Span::styled("q", Style::default().fg(Color::Cyan)),
+            Span::raw(" Quit"),
+        ])]
     };
     let help = Paragraph::new(help_lines)
         .style(Style::default().fg(Color::Gray))
@@ -304,7 +391,11 @@ pub fn render_settings(f: &mut Frame, settings: &SettingsState) {
 
     // Title
     let title = Paragraph::new("Settings")
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(title, chunks[0]);
@@ -313,7 +404,11 @@ pub fn render_settings(f: &mut Frame, settings: &SettingsState) {
     let mut lines = vec![];
 
     let hide_self_status = get_hide_self_status(settings.hide_self);
-    let pg_enabled_status = if settings.priority_guard_enabled { "ON" } else { "OFF" };
+    let pg_enabled_status = if settings.priority_guard_enabled {
+        "ON"
+    } else {
+        "OFF"
+    };
     let adaptive_display = if settings.priority_guard_adaptive_sensitivity == 0.0 {
         "OFF".to_string()
     } else {
@@ -321,26 +416,73 @@ pub fn render_settings(f: &mut Frame, settings: &SettingsState) {
     };
 
     let options: &[(usize, String, Option<&str>)] = &[
-        (0, format!("  Poll Interval: {} ms ", settings.poll_interval_ms),
-            Some("  (less = faster updates, higher CPU usage)")),
-        (1, format!("  Hide Self (ProcWarden): {} ", hide_self_status), None),
-        (2, format!("  PriorityGuard: {} ", pg_enabled_status),
-            Some("  (auto-demote CPU hogs to Below Normal priority)")),
-        (3, format!("  CPU Threshold: {:.0}% ", settings.priority_guard_cpu_threshold), None),
-        (4, format!("  Duration: {}s ", settings.priority_guard_duration_secs),
-            Some("  (how long a process must exceed threshold before demotion)")),
-        (5, format!("  Per-Core Threshold: {:.0}% ", settings.priority_guard_per_core_threshold),
-            Some("  (max estimated single-core CPU to trigger demotion)")),
-        (6, format!("  Relative Multiplier: {:.0}x ", settings.priority_guard_relative_multiplier),
-            Some("  (trigger if CPU > multiplier × median of all processes)")),
-        (7, format!("  EMA Alpha: {:.2} ", settings.priority_guard_ema_alpha),
-            Some("  (CPU smoothing: lower = smoother, 1.0 = no smoothing)")),
-        (8, format!("  Grace Period: {}s ", settings.priority_guard_grace_period_secs),
-            Some("  (ignore newly launched processes for this duration)")),
-        (9, format!("  Adaptive Sensitivity: {} ", adaptive_display),
-            Some("  (0 = off, higher = more aggressive load-based scaling)")),
-        (10, format!("  Exemptions: [{}] ", settings.user_exemptions.len()),
-            Some("  (processes that PriorityGuard will never demote)")),
+        (
+            0,
+            format!("  Poll Interval: {} ms ", settings.poll_interval_ms),
+            Some("  (less = faster updates, higher CPU usage)"),
+        ),
+        (
+            1,
+            format!("  Hide Self (ProcWarden): {} ", hide_self_status),
+            None,
+        ),
+        (
+            2,
+            format!("  PriorityGuard: {} ", pg_enabled_status),
+            Some("  (auto-demote CPU hogs to Below Normal priority)"),
+        ),
+        (
+            3,
+            format!(
+                "  CPU Threshold: {:.0}% ",
+                settings.priority_guard_cpu_threshold
+            ),
+            None,
+        ),
+        (
+            4,
+            format!("  Duration: {}s ", settings.priority_guard_duration_secs),
+            Some("  (how long a process must exceed threshold before demotion)"),
+        ),
+        (
+            5,
+            format!(
+                "  Per-Core Threshold: {:.0}% ",
+                settings.priority_guard_per_core_threshold
+            ),
+            Some("  (max estimated single-core CPU to trigger demotion)"),
+        ),
+        (
+            6,
+            format!(
+                "  Relative Multiplier: {:.0}x ",
+                settings.priority_guard_relative_multiplier
+            ),
+            Some("  (trigger if CPU > multiplier × median of all processes)"),
+        ),
+        (
+            7,
+            format!("  EMA Alpha: {:.2} ", settings.priority_guard_ema_alpha),
+            Some("  (CPU smoothing: lower = smoother, 1.0 = no smoothing)"),
+        ),
+        (
+            8,
+            format!(
+                "  Grace Period: {}s ",
+                settings.priority_guard_grace_period_secs
+            ),
+            Some("  (ignore newly launched processes for this duration)"),
+        ),
+        (
+            9,
+            format!("  Adaptive Sensitivity: {} ", adaptive_display),
+            Some("  (0 = off, higher = more aggressive load-based scaling)"),
+        ),
+        (
+            10,
+            format!("  Exemptions: [{}] ", settings.user_exemptions.len()),
+            Some("  (processes that PriorityGuard will never demote)"),
+        ),
     ];
 
     for (idx, label, hint) in options {
@@ -354,7 +496,10 @@ pub fn render_settings(f: &mut Frame, settings: &SettingsState) {
         let line = if settings.selected_option == *idx {
             Line::from(vec![Span::styled(
                 label.clone(),
-                Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )])
         } else {
             Line::from(label.as_str())
@@ -376,20 +521,18 @@ pub fn render_settings(f: &mut Frame, settings: &SettingsState) {
     f.render_widget(settings_widget, chunks[1]);
 
     // Help text
-    let help_lines = vec![
-        Line::from(vec![
-            Span::raw("Navigation: "),
-            Span::styled("↑↓", Style::default().fg(Color::Cyan)),
-            Span::raw(" | Adjust: "),
-            Span::styled("←→", Style::default().fg(Color::Cyan)),
-            Span::raw(" | Edit: "),
-            Span::styled("Enter", Style::default().fg(Color::Cyan)),
-            Span::raw(" | Close: "),
-            Span::styled("s/ESC", Style::default().fg(Color::Cyan)),
-            Span::raw(" | Quit: "),
-            Span::styled("q", Style::default().fg(Color::Cyan)),
-        ]),
-    ];
+    let help_lines = vec![Line::from(vec![
+        Span::raw("Navigation: "),
+        Span::styled("↑↓", Style::default().fg(Color::Cyan)),
+        Span::raw(" | Adjust: "),
+        Span::styled("←→", Style::default().fg(Color::Cyan)),
+        Span::raw(" | Edit: "),
+        Span::styled("Enter", Style::default().fg(Color::Cyan)),
+        Span::raw(" | Close: "),
+        Span::styled("s/ESC", Style::default().fg(Color::Cyan)),
+        Span::raw(" | Quit: "),
+        Span::styled("q", Style::default().fg(Color::Cyan)),
+    ])];
     let help = Paragraph::new(help_lines)
         .style(Style::default().fg(Color::Gray))
         .alignment(Alignment::Center)
@@ -413,7 +556,11 @@ pub fn render_log(f: &mut Frame, log_entries: &[LogEntry], scroll_offset: Option
 
     // Title
     let title = Paragraph::new("PriorityGuard Log")
-        .style(Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        )
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(title, chunks[0]);
@@ -425,22 +572,29 @@ pub fn render_log(f: &mut Frame, log_entries: &[LogEntry], scroll_offset: Option
             Style::default().fg(Color::DarkGray),
         ))]
     } else {
-        log_entries.iter().map(|entry| {
-            let timestamp = format!("[{:>8.1}s] ", entry.elapsed_secs);
-            let color = if entry.message.starts_with("demoted") || entry.message.starts_with("demotion failed") {
-                Color::Red
-            } else if entry.message.starts_with("restored") || entry.message.starts_with("cleanup") {
-                Color::Green
-            } else if entry.message.starts_with("grace") {
-                Color::Cyan
-            } else {
-                Color::Yellow // escalated, foreground restore, tier 2, etc.
-            };
-            Line::from(vec![
-                Span::styled(timestamp, Style::default().fg(Color::DarkGray)),
-                Span::styled(&entry.message, Style::default().fg(color)),
-            ])
-        }).collect()
+        log_entries
+            .iter()
+            .map(|entry| {
+                let timestamp = format!("[{:>8.1}s] ", entry.elapsed_secs);
+                let color = if entry.message.starts_with("demoted")
+                    || entry.message.starts_with("demotion failed")
+                {
+                    Color::Red
+                } else if entry.message.starts_with("restored")
+                    || entry.message.starts_with("cleanup")
+                {
+                    Color::Green
+                } else if entry.message.starts_with("grace") {
+                    Color::Cyan
+                } else {
+                    Color::Yellow // escalated, foreground restore, tier 2, etc.
+                };
+                Line::from(vec![
+                    Span::styled(timestamp, Style::default().fg(Color::DarkGray)),
+                    Span::styled(&entry.message, Style::default().fg(color)),
+                ])
+            })
+            .collect()
     };
 
     let total = log_entries.len() as u16;
@@ -457,20 +611,18 @@ pub fn render_log(f: &mut Frame, log_entries: &[LogEntry], scroll_offset: Option
     f.render_widget(log_widget, chunks[1]);
 
     // Help text
-    let help_lines = vec![
-        Line::from(vec![
-            Span::styled("↑↓/j k", Style::default().fg(Color::Cyan)),
-            Span::raw(" Scroll  "),
-            Span::styled("Home/End", Style::default().fg(Color::Cyan)),
-            Span::raw(" Top/Bottom  "),
-            Span::raw("Close: "),
-            Span::styled("ESC/l", Style::default().fg(Color::Cyan)),
-            Span::raw("  Settings: "),
-            Span::styled("s", Style::default().fg(Color::Cyan)),
-            Span::raw("  Quit: "),
-            Span::styled("q", Style::default().fg(Color::Cyan)),
-        ]),
-    ];
+    let help_lines = vec![Line::from(vec![
+        Span::styled("↑↓/j k", Style::default().fg(Color::Cyan)),
+        Span::raw(" Scroll  "),
+        Span::styled("Home/End", Style::default().fg(Color::Cyan)),
+        Span::raw(" Top/Bottom  "),
+        Span::raw("Close: "),
+        Span::styled("ESC/l", Style::default().fg(Color::Cyan)),
+        Span::raw("  Settings: "),
+        Span::styled("s", Style::default().fg(Color::Cyan)),
+        Span::raw("  Quit: "),
+        Span::styled("q", Style::default().fg(Color::Cyan)),
+    ])];
     let help = Paragraph::new(help_lines)
         .style(Style::default().fg(Color::Gray))
         .alignment(Alignment::Center)
@@ -479,7 +631,9 @@ pub fn render_log(f: &mut Frame, log_entries: &[LogEntry], scroll_offset: Option
 }
 
 fn render_priority_picker(f: &mut Frame, state: &ProcessListState, selected: usize) {
-    let proc_name = state.processes.get(state.selected)
+    let proc_name = state
+        .processes
+        .get(state.selected)
         .map(|p| p.name.as_str())
         .unwrap_or("?");
 
@@ -488,7 +642,12 @@ fn render_priority_picker(f: &mut Frame, state: &ProcessListState, selected: usi
     let popup_height = (PRIORITY_CLASSES.len() as u16) + 4; // borders + title + spacing
     let x = area.width.saturating_sub(popup_width) / 2;
     let y = area.height.saturating_sub(popup_height) / 2;
-    let popup_area = ratatui::layout::Rect::new(x, y, popup_width.min(area.width), popup_height.min(area.height));
+    let popup_area = ratatui::layout::Rect::new(
+        x,
+        y,
+        popup_width.min(area.width),
+        popup_height.min(area.height),
+    );
 
     // Clear background
     f.render_widget(ratatui::widgets::Clear, popup_area);
@@ -498,7 +657,10 @@ fn render_priority_picker(f: &mut Frame, state: &ProcessListState, selected: usi
         let line = if i == selected {
             Line::from(Span::styled(
                 format!("  > {} ", label),
-                Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ))
         } else {
             Line::from(format!("    {} ", label))
@@ -508,19 +670,32 @@ fn render_priority_picker(f: &mut Frame, state: &ProcessListState, selected: usi
 
     let title = format!("Set Priority: {}", proc_name);
     let picker = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title(title)
-            .border_style(Style::default().fg(Color::Magenta)))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(Style::default().fg(Color::Magenta)),
+        )
         .style(Style::default().fg(Color::White));
     f.render_widget(picker, popup_area);
 }
 
-fn render_exemption_editor(f: &mut Frame, settings: &SettingsState, editor_state: &ExemptionEditorState) {
+fn render_exemption_editor(
+    f: &mut Frame,
+    settings: &SettingsState,
+    editor_state: &ExemptionEditorState,
+) {
     let area = f.area();
     let popup_width = 60u16;
     let popup_height = 20u16;
     let x = area.width.saturating_sub(popup_width) / 2;
     let y = area.height.saturating_sub(popup_height) / 2;
-    let popup_area = ratatui::layout::Rect::new(x, y, popup_width.min(area.width), popup_height.min(area.height));
+    let popup_area = ratatui::layout::Rect::new(
+        x,
+        y,
+        popup_width.min(area.width),
+        popup_height.min(area.height),
+    );
 
     // Clear background
     f.render_widget(ratatui::widgets::Clear, popup_area);
@@ -550,7 +725,10 @@ fn render_exemption_editor(f: &mut Frame, settings: &SettingsState, editor_state
             let line = if i == editor_state.selected && !editor_state.editing_new {
                 Line::from(Span::styled(
                     format!("  > {} ", exemption),
-                    Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ))
             } else {
                 Line::from(format!("    {} ", exemption))
@@ -560,14 +738,20 @@ fn render_exemption_editor(f: &mut Frame, settings: &SettingsState, editor_state
     }
 
     let list_widget = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("PriorityGuard Exemptions")
-            .border_style(Style::default().fg(Color::Magenta)))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("PriorityGuard Exemptions")
+                .border_style(Style::default().fg(Color::Magenta)),
+        )
         .style(Style::default().fg(Color::White));
     f.render_widget(list_widget, chunks[0]);
 
     // Input box (when adding new exemption)
     if editor_state.editing_new {
-        let (before, after) = editor_state.input_buffer.split_at(editor_state.input_cursor);
+        let (before, after) = editor_state
+            .input_buffer
+            .split_at(editor_state.input_cursor);
         let input_content = format!("{}|{}", before, after);
         let input_widget = Paragraph::new(input_content)
             .style(Style::default().fg(Color::White))
@@ -579,24 +763,25 @@ fn render_exemption_editor(f: &mut Frame, settings: &SettingsState, editor_state
             );
         f.render_widget(input_widget, chunks[1]);
     } else {
-        let input_widget = Paragraph::new("")
-            .block(Block::default().borders(Borders::ALL).title("Add Exemption"));
+        let input_widget = Paragraph::new("").block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Add Exemption"),
+        );
         f.render_widget(input_widget, chunks[1]);
     }
 
     // Help text
-    let help_lines = vec![
-        Line::from(vec![
-            Span::styled("↑↓", Style::default().fg(Color::Cyan)),
-            Span::raw(" Nav  "),
-            Span::styled("Del/x", Style::default().fg(Color::Red)),
-            Span::raw(" Remove  "),
-            Span::styled("a/Enter", Style::default().fg(Color::Green)),
-            Span::raw(" Add  "),
-            Span::styled("e/ESC", Style::default().fg(Color::Cyan)),
-            Span::raw(" Back"),
-        ]),
-    ];
+    let help_lines = vec![Line::from(vec![
+        Span::styled("↑↓", Style::default().fg(Color::Cyan)),
+        Span::raw(" Nav  "),
+        Span::styled("Del/x", Style::default().fg(Color::Red)),
+        Span::raw(" Remove  "),
+        Span::styled("a/Enter", Style::default().fg(Color::Green)),
+        Span::raw(" Add  "),
+        Span::styled("e/ESC", Style::default().fg(Color::Cyan)),
+        Span::raw(" Back"),
+    ])];
     let help = Paragraph::new(help_lines)
         .style(Style::default().fg(Color::Gray))
         .alignment(Alignment::Center)
@@ -621,7 +806,10 @@ mod tests {
 
     #[test]
     fn filter_content_unfocused_empty() {
-        assert_eq!(build_filter_content("", 0, false), "Filter: (Tab to focus, comma = OR)");
+        assert_eq!(
+            build_filter_content("", 0, false),
+            "Filter: (Tab to focus, comma = OR)"
+        );
     }
 
     #[test]
@@ -680,20 +868,38 @@ mod tests {
 
     #[test]
     fn confirmation_prompt_kill() {
-        let action = PendingAction::Kill { pid: 123, name: "test.exe".into() };
-        assert_eq!(build_confirmation_prompt(&action), "Kill 'test.exe' (PID 123)? [Y/N]");
+        let action = PendingAction::Kill {
+            pid: 123,
+            name: "test.exe".into(),
+        };
+        assert_eq!(
+            build_confirmation_prompt(&action),
+            "Kill 'test.exe' (PID 123)? [Y/N]"
+        );
     }
 
     #[test]
     fn confirmation_prompt_suspend() {
-        let action = PendingAction::Suspend { pid: 456, name: "app.exe".into() };
-        assert_eq!(build_confirmation_prompt(&action), "Suspend 'app.exe' (PID 456)? [Y/N]");
+        let action = PendingAction::Suspend {
+            pid: 456,
+            name: "app.exe".into(),
+        };
+        assert_eq!(
+            build_confirmation_prompt(&action),
+            "Suspend 'app.exe' (PID 456)? [Y/N]"
+        );
     }
 
     #[test]
     fn confirmation_prompt_resume() {
-        let action = PendingAction::Resume { pid: 789, name: "srv.exe".into() };
-        assert_eq!(build_confirmation_prompt(&action), "Resume 'srv.exe' (PID 789)? [Y/N]");
+        let action = PendingAction::Resume {
+            pid: 789,
+            name: "srv.exe".into(),
+        };
+        assert_eq!(
+            build_confirmation_prompt(&action),
+            "Resume 'srv.exe' (PID 789)? [Y/N]"
+        );
     }
 }
 

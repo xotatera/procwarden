@@ -1,17 +1,21 @@
-use std::collections::HashSet;
+use crate::common::{
+    DataSourceMode, ExemptionEditorState, PendingAction, ProcessListState, SettingsState, UIMode,
+};
+use crate::data_source::DataSource;
+use crate::priority_guard::windows_api as win_api;
+use crate::priority_guard::{PriorityGuardConfig, PriorityGuardEngine};
+use crate::process_list::display::clamp_selection;
+use crate::process_list::{filter_processes, handle_key as handle_process_key, sort_processes};
+use crate::settings::handlers as settings_handlers;
 use anyhow::Result;
 use crossterm::event::KeyCode;
-use crate::common::{UIMode, PendingAction, ProcessListState, SettingsState, DataSourceMode, ExemptionEditorState};
-use crate::data_source::DataSource;
-use crate::priority_guard::{PriorityGuardConfig, PriorityGuardEngine};
-use crate::priority_guard::windows_api as win_api;
-use crate::process_list::{sort_processes, filter_processes, handle_key as handle_process_key};
-use crate::process_list::display::clamp_selection;
-use crate::settings::handlers as settings_handlers;
+use std::collections::HashSet;
 
 /// Get the number of logical CPU cores, cached after first call.
 fn num_cpus() -> usize {
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(8)
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(8)
 }
 
 /// Main application state machine (OOP approach for state management)
@@ -52,26 +56,46 @@ impl App {
         self.process_list.total_process_count = procs.len();
 
         // Apply filters
-        procs = filter_processes(procs, self.settings.hide_self, &self.process_list.filter_query);
-        
+        procs = filter_processes(
+            procs,
+            self.settings.hide_self,
+            &self.process_list.filter_query,
+        );
+
         // Apply sorting
-        procs = sort_processes(procs, self.process_list.sort_column, self.process_list.sort_ascending);
-        
+        procs = sort_processes(
+            procs,
+            self.process_list.sort_column,
+            self.process_list.sort_ascending,
+        );
+
         self.process_list.processes = procs;
 
         // Restore selection to the previously selected PID if possible
         if let Some(pid) = self.process_list.selected_pid {
-            if let Some(idx) = self.process_list.processes.iter().position(|p| p.pid == pid) {
+            if let Some(idx) = self
+                .process_list
+                .processes
+                .iter()
+                .position(|p| p.pid == pid)
+            {
                 self.process_list.selected = idx;
             }
         }
 
-        self.process_list.selected = clamp_selection(self.process_list.selected, self.process_list.processes.len());
+        self.process_list.selected = clamp_selection(
+            self.process_list.selected,
+            self.process_list.processes.len(),
+        );
 
         // Only sync selected_pid if user has actively selected something;
         // otherwise keep None so selection tracks the top of the sorted list.
         if self.process_list.selected_pid.is_some() {
-            self.process_list.selected_pid = self.process_list.processes.get(self.process_list.selected).map(|p| p.pid);
+            self.process_list.selected_pid = self
+                .process_list
+                .processes
+                .get(self.process_list.selected)
+                .map(|p| p.pid);
         }
 
         self.process_list.rebuild_formatted_rows();
@@ -89,7 +113,8 @@ impl App {
             grace_period_secs: self.settings.priority_guard_grace_period_secs,
             adaptive_sensitivity: self.settings.priority_guard_adaptive_sensitivity,
         };
-        self.priority_guard.tick(&self.process_list.processes, &pg_config);
+        self.priority_guard
+            .tick(&self.process_list.processes, &pg_config);
 
         Ok(())
     }
@@ -113,7 +138,10 @@ impl App {
             return self.handle_filter_key(key);
         }
 
-        let old_sort = (self.process_list.sort_column, self.process_list.sort_ascending);
+        let old_sort = (
+            self.process_list.sort_column,
+            self.process_list.sort_ascending,
+        );
         match key {
             KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(true),
             KeyCode::Char('s') | KeyCode::Char('S') => {
@@ -129,16 +157,23 @@ impl App {
             KeyCode::Char('x') | KeyCode::Delete => {
                 if let Some(proc) = self.process_list.processes.get(self.process_list.selected) {
                     self.pending_action = Some(PendingAction::Kill {
-                        pid: proc.pid, name: proc.name.clone(),
+                        pid: proc.pid,
+                        name: proc.name.clone(),
                     });
                 }
             }
             KeyCode::Char('z') => {
                 if let Some(proc) = self.process_list.processes.get(self.process_list.selected) {
                     let action = if self.suspended_pids.contains(&proc.pid) {
-                        PendingAction::Resume { pid: proc.pid, name: proc.name.clone() }
+                        PendingAction::Resume {
+                            pid: proc.pid,
+                            name: proc.name.clone(),
+                        }
                     } else {
-                        PendingAction::Suspend { pid: proc.pid, name: proc.name.clone() }
+                        PendingAction::Suspend {
+                            pid: proc.pid,
+                            name: proc.name.clone(),
+                        }
                     };
                     self.pending_action = Some(action);
                 }
@@ -154,7 +189,10 @@ impl App {
             }
         }
         // Re-sort cached data immediately if sort state changed (no expensive re-fetch)
-        let new_sort = (self.process_list.sort_column, self.process_list.sort_ascending);
+        let new_sort = (
+            self.process_list.sort_column,
+            self.process_list.sort_ascending,
+        );
         if old_sort != new_sort {
             self.process_list.processes = sort_processes(
                 std::mem::take(&mut self.process_list.processes),
@@ -162,12 +200,24 @@ impl App {
                 self.process_list.sort_ascending,
             );
             if let Some(pid) = self.process_list.selected_pid {
-                if let Some(idx) = self.process_list.processes.iter().position(|p| p.pid == pid) {
+                if let Some(idx) = self
+                    .process_list
+                    .processes
+                    .iter()
+                    .position(|p| p.pid == pid)
+                {
                     self.process_list.selected = idx;
                 }
             }
-            self.process_list.selected = clamp_selection(self.process_list.selected, self.process_list.processes.len());
-            self.process_list.selected_pid = self.process_list.processes.get(self.process_list.selected).map(|p| p.pid);
+            self.process_list.selected = clamp_selection(
+                self.process_list.selected,
+                self.process_list.processes.len(),
+            );
+            self.process_list.selected_pid = self
+                .process_list
+                .processes
+                .get(self.process_list.selected)
+                .map(|p| p.pid);
             self.process_list.rebuild_formatted_rows();
         }
         Ok(false)
@@ -313,21 +363,36 @@ impl App {
                     match action {
                         PendingAction::Kill { pid, name } => {
                             let ok = win_api::terminate_process(pid);
-                            log::info!("Kill {} (PID {}): {}", name, pid, if ok { "success" } else { "failed" });
+                            log::info!(
+                                "Kill {} (PID {}): {}",
+                                name,
+                                pid,
+                                if ok { "success" } else { "failed" }
+                            );
                         }
                         PendingAction::Suspend { pid, name } => {
                             let ok = win_api::suspend_process(pid);
                             if ok {
                                 self.suspended_pids.insert(pid);
                             }
-                            log::info!("Suspend {} (PID {}): {}", name, pid, if ok { "success" } else { "failed" });
+                            log::info!(
+                                "Suspend {} (PID {}): {}",
+                                name,
+                                pid,
+                                if ok { "success" } else { "failed" }
+                            );
                         }
                         PendingAction::Resume { pid, name } => {
                             let ok = win_api::resume_process(pid);
                             if ok {
                                 self.suspended_pids.remove(&pid);
                             }
-                            log::info!("Resume {} (PID {}): {}", name, pid, if ok { "success" } else { "failed" });
+                            log::info!(
+                                "Resume {} (PID {}): {}",
+                                name,
+                                pid,
+                                if ok { "success" } else { "failed" }
+                            );
                         }
                     }
                 }
@@ -354,8 +419,13 @@ impl App {
                 if let Some(proc) = self.process_list.processes.get(self.process_list.selected) {
                     let (raw, label) = win_api::PRIORITY_CLASSES[self.priority_picker_selected];
                     let ok = win_api::set_priority(proc.pid, raw);
-                    log::info!("Set priority of {} (PID {}) to {}: {}",
-                        proc.name, proc.pid, label, if ok { "success" } else { "failed" });
+                    log::info!(
+                        "Set priority of {} (PID {}) to {}: {}",
+                        proc.name,
+                        proc.pid,
+                        label,
+                        if ok { "success" } else { "failed" }
+                    );
                 }
                 self.ui_mode = UIMode::Processes;
             }
@@ -377,7 +447,10 @@ impl App {
                     let input = self.exemption_editor.input_buffer.trim().to_string();
                     if !input.is_empty() {
                         // Check for case-insensitive duplicates
-                        let is_duplicate = self.settings.user_exemptions.iter()
+                        let is_duplicate = self
+                            .settings
+                            .user_exemptions
+                            .iter()
                             .any(|e| e.eq_ignore_ascii_case(&input));
                         if !is_duplicate {
                             self.settings.user_exemptions.push(input.clone());
@@ -401,12 +474,15 @@ impl App {
                     self.exemption_editor.input_cursor = 0;
                 }
                 KeyCode::Char(c) => {
-                    self.exemption_editor.input_buffer.insert(self.exemption_editor.input_cursor, c);
+                    self.exemption_editor
+                        .input_buffer
+                        .insert(self.exemption_editor.input_cursor, c);
                     self.exemption_editor.input_cursor += c.len_utf8();
                 }
                 KeyCode::Backspace => {
                     if self.exemption_editor.input_cursor > 0 {
-                        let prev = self.exemption_editor.input_buffer[..self.exemption_editor.input_cursor]
+                        let prev = self.exemption_editor.input_buffer
+                            [..self.exemption_editor.input_cursor]
                             .char_indices()
                             .next_back()
                             .map(|(i, _)| i)
@@ -416,13 +492,17 @@ impl App {
                     }
                 }
                 KeyCode::Delete => {
-                    if self.exemption_editor.input_cursor < self.exemption_editor.input_buffer.len() {
-                        self.exemption_editor.input_buffer.remove(self.exemption_editor.input_cursor);
+                    if self.exemption_editor.input_cursor < self.exemption_editor.input_buffer.len()
+                    {
+                        self.exemption_editor
+                            .input_buffer
+                            .remove(self.exemption_editor.input_cursor);
                     }
                 }
                 KeyCode::Left => {
                     if self.exemption_editor.input_cursor > 0 {
-                        self.exemption_editor.input_cursor = self.exemption_editor.input_buffer[..self.exemption_editor.input_cursor]
+                        self.exemption_editor.input_cursor = self.exemption_editor.input_buffer
+                            [..self.exemption_editor.input_cursor]
                             .char_indices()
                             .next_back()
                             .map(|(i, _)| i)
@@ -430,8 +510,10 @@ impl App {
                     }
                 }
                 KeyCode::Right => {
-                    if self.exemption_editor.input_cursor < self.exemption_editor.input_buffer.len() {
-                        self.exemption_editor.input_cursor = self.exemption_editor.input_buffer[self.exemption_editor.input_cursor..]
+                    if self.exemption_editor.input_cursor < self.exemption_editor.input_buffer.len()
+                    {
+                        self.exemption_editor.input_cursor = self.exemption_editor.input_buffer
+                            [self.exemption_editor.input_cursor..]
                             .char_indices()
                             .nth(1)
                             .map(|(i, _)| self.exemption_editor.input_cursor + i)
@@ -450,19 +532,29 @@ impl App {
             // Navigation mode
             match key {
                 KeyCode::Up | KeyCode::Char('k') => {
-                    self.exemption_editor.selected = self.exemption_editor.selected.saturating_sub(1);
+                    self.exemption_editor.selected =
+                        self.exemption_editor.selected.saturating_sub(1);
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if !self.settings.user_exemptions.is_empty() && self.exemption_editor.selected < self.settings.user_exemptions.len() - 1 {
+                    if !self.settings.user_exemptions.is_empty()
+                        && self.exemption_editor.selected < self.settings.user_exemptions.len() - 1
+                    {
                         self.exemption_editor.selected += 1;
                     }
                 }
                 KeyCode::Delete | KeyCode::Char('x') => {
-                    if !self.settings.user_exemptions.is_empty() && self.exemption_editor.selected < self.settings.user_exemptions.len() {
-                        let removed = self.settings.user_exemptions.remove(self.exemption_editor.selected);
+                    if !self.settings.user_exemptions.is_empty()
+                        && self.exemption_editor.selected < self.settings.user_exemptions.len()
+                    {
+                        let removed = self
+                            .settings
+                            .user_exemptions
+                            .remove(self.exemption_editor.selected);
                         log::info!("Removed PriorityGuard exemption: {}", removed);
                         // Adjust selection if needed
-                        if self.exemption_editor.selected >= self.settings.user_exemptions.len() && self.exemption_editor.selected > 0 {
+                        if self.exemption_editor.selected >= self.settings.user_exemptions.len()
+                            && self.exemption_editor.selected > 0
+                        {
                             self.exemption_editor.selected -= 1;
                         }
                         // Save settings
@@ -521,9 +613,24 @@ mod tests {
 
     fn sample_procs() -> Vec<ProcessInfo> {
         vec![
-            ProcessInfo { pid: 1, name: "alpha".into(), cpu: 10.0, memory: 1000 },
-            ProcessInfo { pid: 2, name: "bravo".into(), cpu: 50.0, memory: 2000 },
-            ProcessInfo { pid: 3, name: "charlie".into(), cpu: 1.0, memory: 500 },
+            ProcessInfo {
+                pid: 1,
+                name: "alpha".into(),
+                cpu: 10.0,
+                memory: 1000,
+            },
+            ProcessInfo {
+                pid: 2,
+                name: "bravo".into(),
+                cpu: 50.0,
+                memory: 2000,
+            },
+            ProcessInfo {
+                pid: 3,
+                name: "charlie".into(),
+                cpu: 1.0,
+                memory: 500,
+            },
         ]
     }
 
@@ -556,7 +663,12 @@ mod tests {
         app.process_list.sort_column = crate::common::SortColumn::Name;
         app.process_list.sort_ascending = true;
         app.update_processes().unwrap();
-        let names: Vec<&str> = app.process_list.processes.iter().map(|p| p.name.as_str()).collect();
+        let names: Vec<&str> = app
+            .process_list
+            .processes
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
         assert_eq!(names, vec!["alpha", "bravo", "charlie"]);
     }
 
@@ -572,8 +684,18 @@ mod tests {
     fn update_processes_with_hide_self() {
         let self_pid = std::process::id();
         let procs = vec![
-            ProcessInfo { pid: self_pid, name: "self".into(), cpu: 0.0, memory: 0 },
-            ProcessInfo { pid: 999, name: "other".into(), cpu: 0.0, memory: 0 },
+            ProcessInfo {
+                pid: self_pid,
+                name: "self".into(),
+                cpu: 0.0,
+                memory: 0,
+            },
+            ProcessInfo {
+                pid: 999,
+                name: "other".into(),
+                cpu: 0.0,
+                memory: 0,
+            },
         ];
         let mut app = make_app(procs);
         app.settings.hide_self = true;
@@ -655,13 +777,38 @@ mod tests {
         use crate::common::SortColumn;
 
         let procs = vec![
-            ProcessInfo { pid: 3, name: "charlie".into(), cpu: 50.0, memory: 500 },
-            ProcessInfo { pid: 1, name: "alpha".into(), cpu: 10.0, memory: 3000 },
-            ProcessInfo { pid: 2, name: "bravo".into(), cpu: 1.0, memory: 2000 },
-            ProcessInfo { pid: 4, name: "delta".into(), cpu: 25.0, memory: 1000 },
+            ProcessInfo {
+                pid: 3,
+                name: "charlie".into(),
+                cpu: 50.0,
+                memory: 500,
+            },
+            ProcessInfo {
+                pid: 1,
+                name: "alpha".into(),
+                cpu: 10.0,
+                memory: 3000,
+            },
+            ProcessInfo {
+                pid: 2,
+                name: "bravo".into(),
+                cpu: 1.0,
+                memory: 2000,
+            },
+            ProcessInfo {
+                pid: 4,
+                name: "delta".into(),
+                cpu: 25.0,
+                memory: 1000,
+            },
         ];
 
-        for &col in &[SortColumn::Pid, SortColumn::Name, SortColumn::Cpu, SortColumn::Memory] {
+        for &col in &[
+            SortColumn::Pid,
+            SortColumn::Name,
+            SortColumn::Cpu,
+            SortColumn::Memory,
+        ] {
             for &asc in &[true, false] {
                 let mut app = make_app(procs.clone());
                 app.process_list.sort_column = col;
@@ -673,15 +820,22 @@ mod tests {
                     let ordered = match (col, asc) {
                         (SortColumn::Pid, true) => w[0].pid <= w[1].pid,
                         (SortColumn::Pid, false) => w[0].pid >= w[1].pid,
-                        (SortColumn::Name, true) => w[0].name.to_ascii_lowercase() <= w[1].name.to_ascii_lowercase(),
-                        (SortColumn::Name, false) => w[0].name.to_ascii_lowercase() >= w[1].name.to_ascii_lowercase(),
+                        (SortColumn::Name, true) => {
+                            w[0].name.to_ascii_lowercase() <= w[1].name.to_ascii_lowercase()
+                        }
+                        (SortColumn::Name, false) => {
+                            w[0].name.to_ascii_lowercase() >= w[1].name.to_ascii_lowercase()
+                        }
                         (SortColumn::Cpu, true) => w[0].cpu <= w[1].cpu,
                         (SortColumn::Cpu, false) => w[0].cpu >= w[1].cpu,
                         (SortColumn::Memory, true) => w[0].memory <= w[1].memory,
                         (SortColumn::Memory, false) => w[0].memory >= w[1].memory,
                     };
-                    assert!(ordered, "Not sorted by {:?} asc={}: {:?} vs {:?}",
-                        col, asc, w[0], w[1]);
+                    assert!(
+                        ordered,
+                        "Not sorted by {:?} asc={}: {:?} vs {:?}",
+                        col, asc, w[0], w[1]
+                    );
                 }
             }
         }
@@ -692,9 +846,24 @@ mod tests {
         use crate::common::SortColumn;
 
         let mut app = make_app(vec![
-            ProcessInfo { pid: 3, name: "charlie".into(), cpu: 50.0, memory: 500 },
-            ProcessInfo { pid: 1, name: "alpha".into(), cpu: 10.0, memory: 3000 },
-            ProcessInfo { pid: 2, name: "bravo".into(), cpu: 1.0, memory: 2000 },
+            ProcessInfo {
+                pid: 3,
+                name: "charlie".into(),
+                cpu: 50.0,
+                memory: 500,
+            },
+            ProcessInfo {
+                pid: 1,
+                name: "alpha".into(),
+                cpu: 10.0,
+                memory: 3000,
+            },
+            ProcessInfo {
+                pid: 2,
+                name: "bravo".into(),
+                cpu: 1.0,
+                memory: 2000,
+            },
         ]);
         app.update_processes().unwrap();
 
@@ -735,7 +904,11 @@ mod tests {
                 (SortColumn::Memory, true) => w[0].memory <= w[1].memory,
                 (SortColumn::Memory, false) => w[0].memory >= w[1].memory,
             };
-            assert!(ordered, "Not sorted after Space toggle: {:?} asc={}", col, asc);
+            assert!(
+                ordered,
+                "Not sorted after Space toggle: {:?} asc={}",
+                col, asc
+            );
         }
     }
 
@@ -1024,7 +1197,10 @@ mod tests {
         let mut app = make_app(sample_procs());
         app.update_processes().unwrap();
         app.on_key(KeyCode::Char('x')).unwrap();
-        assert!(matches!(app.pending_action, Some(PendingAction::Kill { .. })));
+        assert!(matches!(
+            app.pending_action,
+            Some(PendingAction::Kill { .. })
+        ));
     }
 
     #[test]
@@ -1032,7 +1208,10 @@ mod tests {
         let mut app = make_app(sample_procs());
         app.update_processes().unwrap();
         app.on_key(KeyCode::Delete).unwrap();
-        assert!(matches!(app.pending_action, Some(PendingAction::Kill { .. })));
+        assert!(matches!(
+            app.pending_action,
+            Some(PendingAction::Kill { .. })
+        ));
     }
 
     #[test]
@@ -1040,7 +1219,10 @@ mod tests {
         let mut app = make_app(sample_procs());
         app.update_processes().unwrap();
         app.on_key(KeyCode::Char('z')).unwrap();
-        assert!(matches!(app.pending_action, Some(PendingAction::Suspend { .. })));
+        assert!(matches!(
+            app.pending_action,
+            Some(PendingAction::Suspend { .. })
+        ));
     }
 
     #[test]
@@ -1050,7 +1232,10 @@ mod tests {
         let pid = app.process_list.processes[app.process_list.selected].pid;
         app.suspended_pids.insert(pid);
         app.on_key(KeyCode::Char('z')).unwrap();
-        assert!(matches!(app.pending_action, Some(PendingAction::Resume { .. })));
+        assert!(matches!(
+            app.pending_action,
+            Some(PendingAction::Resume { .. })
+        ));
     }
 
     #[test]
@@ -1231,9 +1416,24 @@ mod fuzz_tests {
 
     fn sample_procs() -> Vec<ProcessInfo> {
         vec![
-            ProcessInfo { pid: 1, name: "alpha".into(), cpu: 10.0, memory: 1000 },
-            ProcessInfo { pid: 2, name: "bravo".into(), cpu: 50.0, memory: 2000 },
-            ProcessInfo { pid: 3, name: "charlie".into(), cpu: 1.0, memory: 500 },
+            ProcessInfo {
+                pid: 1,
+                name: "alpha".into(),
+                cpu: 10.0,
+                memory: 1000,
+            },
+            ProcessInfo {
+                pid: 2,
+                name: "bravo".into(),
+                cpu: 50.0,
+                memory: 2000,
+            },
+            ProcessInfo {
+                pid: 3,
+                name: "charlie".into(),
+                cpu: 1.0,
+                memory: 500,
+            },
         ]
     }
 
@@ -1265,7 +1465,8 @@ mod fuzz_tests {
             Just(KeyCode::Char('k')),
             Just(KeyCode::Char('/')),
             // Don't include 'q' — it quits the app
-            any::<char>().prop_filter("no quit", |c| *c != 'q' && *c != 'Q')
+            any::<char>()
+                .prop_filter("no quit", |c| *c != 'q' && *c != 'Q')
                 .prop_map(KeyCode::Char),
         ]
     }

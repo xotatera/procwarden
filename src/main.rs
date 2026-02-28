@@ -4,11 +4,11 @@ use std::time::{Duration, Instant};
 
 use procwarden::app::App;
 use procwarden::common::DataSourceMode;
-use procwarden::data_source::{self, PollingDataSource};
 #[cfg(feature = "etw")]
 use procwarden::data_source::EtwDataSource;
-use procwarden::ui::{self, init_terminal, restore_terminal, render_ui};
+use procwarden::data_source::{self, PollingDataSource};
 use procwarden::ui::rendering::PriorityGuardStatus;
+use procwarden::ui::{self, init_terminal, render_ui, restore_terminal};
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -20,29 +20,36 @@ fn main() -> Result<()> {
     // fails to initialize, or requires admin privileges.
     // Use --disable-etw to force polling mode if needed.
     let disable_etw = std::env::args().any(|arg| arg == "--disable-etw");
-    let (data_source, mode): (Box<dyn data_source::DataSource>, DataSourceMode) = if cfg!(feature = "etw") && !disable_etw {
-        #[cfg(feature = "etw")]
-        {
-            match EtwDataSource::new() {
-                Ok(etw) => {
-                    log::info!("Using ETW data source");
-                    (Box::new(etw), DataSourceMode::Etw)
-                }
-                Err(e) => {
-                    log::warn!("ETW initialization failed ({}), falling back to polling", e);
-                    (Box::new(PollingDataSource::new()), DataSourceMode::PollingFallback)
+    let (data_source, mode): (Box<dyn data_source::DataSource>, DataSourceMode) =
+        if cfg!(feature = "etw") && !disable_etw {
+            #[cfg(feature = "etw")]
+            {
+                match EtwDataSource::new() {
+                    Ok(etw) => {
+                        log::info!("Using ETW data source");
+                        (Box::new(etw), DataSourceMode::Etw)
+                    }
+                    Err(e) => {
+                        log::warn!("ETW initialization failed ({}), falling back to polling", e);
+                        (
+                            Box::new(PollingDataSource::new()),
+                            DataSourceMode::PollingFallback,
+                        )
+                    }
                 }
             }
-        }
-        #[cfg(not(feature = "etw"))]
-        {
-            unreachable!("ETW feature indicated but not compiled")
-        }
-    } else {
-        log::info!("Using polling data source");
-        (Box::new(PollingDataSource::new()), DataSourceMode::PollingFallback)
-    };
-    
+            #[cfg(not(feature = "etw"))]
+            {
+                unreachable!("ETW feature indicated but not compiled")
+            }
+        } else {
+            log::info!("Using polling data source");
+            (
+                Box::new(PollingDataSource::new()),
+                DataSourceMode::PollingFallback,
+            )
+        };
+
     let mut app = App::new(data_source, mode);
 
     // Load persisted settings
@@ -66,10 +73,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_app(
-    terminal: &mut ui::TerminalHandle,
-    app: &mut App,
-) -> Result<()> {
+fn run_app(terminal: &mut ui::TerminalHandle, app: &mut App) -> Result<()> {
     let mut last_refresh = Instant::now() - Duration::from_secs(1); // force initial refresh
     let mut needs_render = true;
 
@@ -96,7 +100,16 @@ fn run_app(
                     priority_picker_selected: app.priority_picker_selected,
                     exemption_editor: &app.exemption_editor,
                 };
-                render_ui(f, app.ui_mode, &mut app.process_list, &app.settings, app.data_source_mode, &pg_status, app.log_scroll_offset, &action_state);
+                render_ui(
+                    f,
+                    app.ui_mode,
+                    &mut app.process_list,
+                    &app.settings,
+                    app.data_source_mode,
+                    &pg_status,
+                    app.log_scroll_offset,
+                    &action_state,
+                );
             })?;
             needs_render = false;
         }
@@ -107,7 +120,9 @@ fn run_app(
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     // Ctrl+C quits from any mode
-                    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    if key.code == KeyCode::Char('c')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                    {
                         return Ok(());
                     }
                     if app.on_key(key.code)? {

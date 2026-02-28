@@ -1,6 +1,6 @@
-use crossterm::event::KeyCode;
-use crate::common::SettingsState;
 use super::clamp_poll_interval;
+use crate::common::SettingsState;
+use crossterm::event::KeyCode;
 
 /// Clamp CPU threshold to valid range.
 pub fn clamp_cpu_threshold(value: f32) -> f32 {
@@ -53,7 +53,8 @@ pub fn handle_key(state: &mut SettingsState, key: KeyCode) {
         KeyCode::Left => {
             match state.selected_option {
                 0 => {
-                    state.poll_interval_ms = clamp_poll_interval(state.poll_interval_ms.saturating_sub(50));
+                    state.poll_interval_ms =
+                        clamp_poll_interval(state.poll_interval_ms.saturating_sub(50));
                 }
                 1 => {
                     state.hide_self = !state.hide_self;
@@ -62,25 +63,33 @@ pub fn handle_key(state: &mut SettingsState, key: KeyCode) {
                     state.priority_guard_enabled = !state.priority_guard_enabled;
                 }
                 3 => {
-                    state.priority_guard_cpu_threshold = clamp_cpu_threshold(state.priority_guard_cpu_threshold - 5.0);
+                    state.priority_guard_cpu_threshold =
+                        clamp_cpu_threshold(state.priority_guard_cpu_threshold - 5.0);
                 }
                 4 => {
-                    state.priority_guard_duration_secs = clamp_duration_secs(state.priority_guard_duration_secs.saturating_sub(1));
+                    state.priority_guard_duration_secs =
+                        clamp_duration_secs(state.priority_guard_duration_secs.saturating_sub(1));
                 }
                 5 => {
-                    state.priority_guard_per_core_threshold = clamp_per_core_threshold(state.priority_guard_per_core_threshold - 5.0);
+                    state.priority_guard_per_core_threshold =
+                        clamp_per_core_threshold(state.priority_guard_per_core_threshold - 5.0);
                 }
                 6 => {
-                    state.priority_guard_relative_multiplier = clamp_relative_multiplier(state.priority_guard_relative_multiplier - 1.0);
+                    state.priority_guard_relative_multiplier =
+                        clamp_relative_multiplier(state.priority_guard_relative_multiplier - 1.0);
                 }
                 7 => {
-                    state.priority_guard_ema_alpha = clamp_ema_alpha(state.priority_guard_ema_alpha - 0.05);
+                    state.priority_guard_ema_alpha =
+                        clamp_ema_alpha(state.priority_guard_ema_alpha - 0.05);
                 }
                 8 => {
-                    state.priority_guard_grace_period_secs = clamp_grace_period_secs(state.priority_guard_grace_period_secs.saturating_sub(1));
+                    state.priority_guard_grace_period_secs = clamp_grace_period_secs(
+                        state.priority_guard_grace_period_secs.saturating_sub(1),
+                    );
                 }
                 9 => {
-                    state.priority_guard_adaptive_sensitivity = clamp_adaptive_sensitivity(state.priority_guard_adaptive_sensitivity - 0.1);
+                    state.priority_guard_adaptive_sensitivity =
+                        clamp_adaptive_sensitivity(state.priority_guard_adaptive_sensitivity - 0.1);
                 }
                 10 => {
                     // Exemptions: no Left/Right adjustment (Enter to edit in ExemptionEditor mode)
@@ -100,25 +109,32 @@ pub fn handle_key(state: &mut SettingsState, key: KeyCode) {
                     state.priority_guard_enabled = !state.priority_guard_enabled;
                 }
                 3 => {
-                    state.priority_guard_cpu_threshold = clamp_cpu_threshold(state.priority_guard_cpu_threshold + 5.0);
+                    state.priority_guard_cpu_threshold =
+                        clamp_cpu_threshold(state.priority_guard_cpu_threshold + 5.0);
                 }
                 4 => {
-                    state.priority_guard_duration_secs = clamp_duration_secs(state.priority_guard_duration_secs + 1);
+                    state.priority_guard_duration_secs =
+                        clamp_duration_secs(state.priority_guard_duration_secs + 1);
                 }
                 5 => {
-                    state.priority_guard_per_core_threshold = clamp_per_core_threshold(state.priority_guard_per_core_threshold + 5.0);
+                    state.priority_guard_per_core_threshold =
+                        clamp_per_core_threshold(state.priority_guard_per_core_threshold + 5.0);
                 }
                 6 => {
-                    state.priority_guard_relative_multiplier = clamp_relative_multiplier(state.priority_guard_relative_multiplier + 1.0);
+                    state.priority_guard_relative_multiplier =
+                        clamp_relative_multiplier(state.priority_guard_relative_multiplier + 1.0);
                 }
                 7 => {
-                    state.priority_guard_ema_alpha = clamp_ema_alpha(state.priority_guard_ema_alpha + 0.05);
+                    state.priority_guard_ema_alpha =
+                        clamp_ema_alpha(state.priority_guard_ema_alpha + 0.05);
                 }
                 8 => {
-                    state.priority_guard_grace_period_secs = clamp_grace_period_secs(state.priority_guard_grace_period_secs + 1);
+                    state.priority_guard_grace_period_secs =
+                        clamp_grace_period_secs(state.priority_guard_grace_period_secs + 1);
                 }
                 9 => {
-                    state.priority_guard_adaptive_sensitivity = clamp_adaptive_sensitivity(state.priority_guard_adaptive_sensitivity + 0.1);
+                    state.priority_guard_adaptive_sensitivity =
+                        clamp_adaptive_sensitivity(state.priority_guard_adaptive_sensitivity + 0.1);
                 }
                 10 => {
                     // Exemptions: no Left/Right adjustment (Enter to edit in ExemptionEditor mode)

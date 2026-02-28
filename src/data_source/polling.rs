@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use anyhow::Result;
-use sysinfo::{ProcessRefreshKind, System};
-use crate::common::ProcessInfo;
 use super::DataSource;
+use crate::common::ProcessInfo;
+use anyhow::Result;
+use std::collections::HashMap;
+use sysinfo::{ProcessRefreshKind, System};
 
 /// Polling-based process data source using sysinfo
 pub struct PollingDataSource {
@@ -41,7 +41,8 @@ impl PollingDataSource {
 
 impl DataSource for PollingDataSource {
     fn get_processes(&mut self) -> Result<Vec<ProcessInfo>> {
-        self.system.refresh_processes(sysinfo::ProcessesToUpdate::All);
+        self.system
+            .refresh_processes(sysinfo::ProcessesToUpdate::All);
 
         let procs = self
             .system
@@ -116,7 +117,11 @@ mod tests {
         let mut ds = PollingDataSource::new();
         let procs = ds.get_processes().unwrap();
         for p in &procs {
-            assert!(!p.name.is_empty(), "process name should not be empty for pid {}", p.pid);
+            assert!(
+                !p.name.is_empty(),
+                "process name should not be empty for pid {}",
+                p.pid
+            );
         }
     }
 
@@ -146,7 +151,11 @@ mod tests {
         let mut ds = PollingDataSource::new();
         let mem = ds.get_memory_only();
         let self_pid = std::process::id();
-        assert!(mem.contains_key(&self_pid), "should contain self (pid {})", self_pid);
+        assert!(
+            mem.contains_key(&self_pid),
+            "should contain self (pid {})",
+            self_pid
+        );
         assert!(mem[&self_pid] > 0, "self should have non-zero memory");
     }
 
@@ -154,7 +163,10 @@ mod tests {
     fn num_cpus_is_reasonable() {
         let ds = PollingDataSource::new();
         assert!(ds.num_cpus >= 1.0, "should have at least 1 CPU");
-        assert!(ds.num_cpus <= 1024.0, "sanity check: not more than 1024 CPUs");
+        assert!(
+            ds.num_cpus <= 1024.0,
+            "sanity check: not more than 1024 CPUs"
+        );
     }
 
     /// Cross-validate ALL process names against PowerShell's Get-Process.
@@ -171,14 +183,20 @@ mod tests {
         let procs = ds.get_processes().unwrap();
 
         // Test every process, skip PID-fallbacks (those already failed name lookup)
-        let testable: Vec<_> = procs.iter()
+        let testable: Vec<_> = procs
+            .iter()
             .filter(|p| !p.name.starts_with("PID-"))
             .collect();
 
-        assert!(testable.len() >= 10, "need at least 10 testable processes, got {}", testable.len());
+        assert!(
+            testable.len() >= 10,
+            "need at least 10 testable processes, got {}",
+            testable.len()
+        );
 
         // Query PowerShell for ALL PIDs at once
-        let pids_csv: String = testable.iter()
+        let pids_csv: String = testable
+            .iter()
             .map(|p| p.pid.to_string())
             .collect::<Vec<_>>()
             .join(",");
@@ -196,7 +214,8 @@ mod tests {
         let stdout = String::from_utf8_lossy(&output.stdout);
 
         // Parse PowerShell output into a PID→name map
-        let ps_names: HashMap<u32, String> = stdout.lines()
+        let ps_names: HashMap<u32, String> = stdout
+            .lines()
             .filter_map(|line| {
                 let (pid_str, name) = line.split_once('|')?;
                 let pid: u32 = pid_str.trim().parse().ok()?;
@@ -214,7 +233,8 @@ mod tests {
             };
 
             // sysinfo returns "notepad.exe", PowerShell returns "notepad"
-            let our_name = proc.name
+            let our_name = proc
+                .name
                 .strip_suffix(".exe")
                 .or_else(|| proc.name.strip_suffix(".EXE"))
                 .unwrap_or(&proc.name);
@@ -223,7 +243,8 @@ mod tests {
                 matched += 1;
             } else {
                 mismatched.push(format!(
-                    "PID {}: ours='{}' ps='{}'", proc.pid, proc.name, ps_name
+                    "PID {}: ours='{}' ps='{}'",
+                    proc.pid, proc.name, ps_name
                 ));
             }
         }
@@ -231,7 +252,10 @@ mod tests {
         let skipped = testable.len() - matched - mismatched.len();
         eprintln!(
             "PowerShell cross-check: {} total, {} matched, {} mismatched, {} skipped (exited)",
-            testable.len(), matched, mismatched.len(), skipped
+            testable.len(),
+            matched,
+            mismatched.len(),
+            skipped
         );
         for m in &mismatched {
             eprintln!("  {}", m);

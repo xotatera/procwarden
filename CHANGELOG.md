@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-02-28
+
+### Changed
+
+- Upgraded `windows` crate from 0.48 to 0.62 for improved Windows API support
+- PriorityGuard now uses PID-based self-process detection instead of hardcoded process name
+
+### Added
+
+- Multi-criteria system process detection for PriorityGuard exemptions:
+  - Process integrity level checking (High/System integrity = critical process)
+  - Session ID checking (Session 0 = system services)
+  - Manual FFI bindings for Windows Security APIs (OpenProcessToken, GetTokenInformation, GetSidSubAuthority)
+- Robust system process protection that works across different Windows versions
+
+### Fixed
+
+- Removed hardcoded "procwarden.exe" exemption that failed when executable was renamed
+- Fixed breaking changes from windows crate upgrade (`.as_bool()` → `.is_ok()`, PROCESSTRACE_HANDLE field access)
+
+### Security
+
+- Enhanced system process protection prevents accidental priority changes to critical Windows services
+
+## [0.2.0] - 2026-02-28
+
+### Added
+
+- PriorityGuard process exemptions UI
+
 ## [0.1.0] - 2026-02-28
 
 ### Added
