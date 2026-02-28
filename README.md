@@ -2,6 +2,14 @@
 
 Process Warden is a Windows process management tool that provides a terminal-based interface to monitor, manage, and control system processes.
 
+## Installation
+
+Download the latest `procwarden-vX.Y.Z-x86_64-windows.zip` from
+[GitHub Releases](https://github.com/xotatera/procwarden/releases),
+extract, and run `procwarden.exe`.
+
+Or build from source (see [Building](#building) below).
+
 ## Features
 
 - Real-time process monitoring with CPU and memory usage tracking

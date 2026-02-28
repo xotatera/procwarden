@@ -295,7 +295,7 @@ impl PriorityGuardEngine {
             return 0.0;
         }
         let mut cpus: Vec<f32> = ema_values.values().copied().collect();
-        cpus.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        cpus.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let len = cpus.len();
         if len.is_multiple_of(2) {
             (cpus[len / 2 - 1] + cpus[len / 2]) / 2.0

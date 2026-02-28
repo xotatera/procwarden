@@ -5,12 +5,18 @@ edition = "2021"
 license = "GPL-3.0-only"
 default-run = "procwarden"
 autobenches = false
+description = "TUI process manager for Windows — monitor, control, and auto-throttle CPU hogs"
+repository = "https://github.com/xotatera/procwarden"
+homepage = "https://github.com/xotatera/procwarden"
+readme = "README.md"
+keywords = ["process-manager", "tui", "windows", "etw", "priority"]
+categories = ["command-line-utilities", "os::windows-apis"]
 
 [dependencies]
 ratatui = "0.28"
 crossterm = "0.28"
 sysinfo = "0.31"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time"] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
