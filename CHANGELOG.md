@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-03-01
+
+### Added
+
+- **Path+Hash Based Exemption System**: Complete rewrite of PriorityGuard exemptions
+  - Dual cryptographic hashing (SHA256 + Blake3) for secure process verification
+  - Path-based matching with case-insensitive support on Windows
+  - Hash verification with non-blocking warnings when executable changes
+  - New `src/exemption/` module with clean architecture:
+    - Domain types: `Exemption`, `ExemptionList`, `ExemptionMatcher`
+    - Trait-based hashing with `HashAlgorithm` trait
+    - Verification service for hash validation
+    - JSON persistence with automatic migration from v1 format
+- **Tabbed Exemption Picker UI**:
+  - Running Processes tab: Select from currently running processes with valid exe paths
+  - Browse tab: Placeholder for future file system browser
+  - Manual Entry tab: Type executable path directly with full cursor support
+  - Tab switching with Tab key, Esc to exit
+  - Refresh command ('r') to update running process list
+- 45 new unit tests with property-based fuzzing using proptest
+- 7 new integration tests for exemption picker UI (335 total tests)
+
+### Changed
+
+- **BREAKING**: Exemptions now require full executable path instead of just filename
+- Old filename-based exemptions are automatically cleared on upgrade with migration message
+- PriorityGuard `is_exempt()` function now accepts optional `exe_path` parameter
+- ExemptionEditorState replaced with ExemptionPickerState (backward-compatible type alias)
+- Settings display shows exemption count instead of list
+
+### Fixed
+
+- Critical performance bug: `is_exempt()` no longer creates System instance for every process check
+- Manual entry mode bug: 'e' and 'E' keys now type characters instead of exiting picker
+- Removed duplicate System refresh in ProcessCandidate construction
+
+### Security
+
+- Cryptographic hash verification (SHA256 + Blake3) prevents exe tampering
+- Path-based matching eliminates filename collision attacks
+- Hash mismatch warnings logged when executable changes (non-blocking)
+
+### Dependencies
+
+- Added `sha2` 0.10 for SHA256 hashing
+- Added `blake3` 1.5 for Blake3 hashing
+- Added `hex` 0.4 for hash encoding
+- Added `rand` 0.8 (dev) for testing
+
 ## [0.3.0] - 2026-02-28
 
 ### Changed
