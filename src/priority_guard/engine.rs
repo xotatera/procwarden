@@ -155,7 +155,7 @@ impl PriorityGuardEngine {
         let mut pending_history: Vec<u32> = Vec::new();
 
         for proc in processes {
-            if is_exempt(proc.pid, &proc.name, &config.user_exemptions) {
+            if is_exempt(proc.pid, &proc.name, &config.exemption_matcher) {
                 continue;
             }
 
@@ -376,7 +376,9 @@ mod tests {
             enabled,
             cpu_threshold: threshold,
             duration_secs,
-            user_exemptions: vec![],
+            exemption_matcher: crate::exemption::ExemptionMatcher::new(
+                crate::exemption::ExemptionList::new(),
+            ),
             per_core_threshold: 95.0,
             core_count: 8,
             relative_multiplier: 8.0,
@@ -442,14 +444,19 @@ mod tests {
     }
 
     #[test]
-    fn user_exemption_respected() {
+    fn exemption_system_integration() {
+        // Note: Path-based exemption matching logic is tested in exemption module.
+        // This test verifies that the engine respects is_exempt().
+        // System process exemptions (csrss, svchost, etc.) are tested in config.rs
         let mut engine = PriorityGuardEngine::new();
-        let procs = vec![make_proc(1, "myapp.exe", 99.0)];
+        let procs = vec![make_proc(999, "csrss.exe", 99.0)]; // System process
         let config = PriorityGuardConfig {
             enabled: true,
             cpu_threshold: 80.0,
             duration_secs: 0,
-            user_exemptions: vec!["myapp.exe".to_string()],
+            exemption_matcher: crate::exemption::ExemptionMatcher::new(
+                crate::exemption::ExemptionList::new(),
+            ),
             per_core_threshold: 95.0,
             core_count: 8,
             relative_multiplier: 8.0,
@@ -458,6 +465,7 @@ mod tests {
             adaptive_sensitivity: 0.0,
         };
         engine.tick(&procs, &config);
+        // csrss.exe should be exempt (system process)
         assert!(engine.offenders.is_empty());
     }
 
@@ -527,7 +535,9 @@ mod tests {
             enabled: true,
             cpu_threshold: 80.0,
             duration_secs: 3,
-            user_exemptions: vec![],
+            exemption_matcher: crate::exemption::ExemptionMatcher::new(
+                crate::exemption::ExemptionList::new(),
+            ),
             per_core_threshold: 100.0, // Disable per-core for this test
             core_count: 1,
             relative_multiplier: 100.0, // Disable relative for this test
@@ -663,7 +673,9 @@ mod fuzz_tests {
                         enabled,
                         cpu_threshold: cpu,
                         duration_secs: dur,
-                        user_exemptions: vec![],
+                        exemption_matcher: crate::exemption::ExemptionMatcher::new(
+                            crate::exemption::ExemptionList::new(),
+                        ),
                         per_core_threshold: per_core,
                         core_count: cores,
                         relative_multiplier: rel,
@@ -737,7 +749,9 @@ mod fuzz_tests {
                 enabled: true,
                 cpu_threshold: 1.0,
                 duration_secs: 0,
-                user_exemptions: vec![],
+                exemption_matcher: crate::exemption::ExemptionMatcher::new(
+                crate::exemption::ExemptionList::new(),
+            ),
                 per_core_threshold: 1.0,
                 core_count: 1,
                 relative_multiplier: 1.0,

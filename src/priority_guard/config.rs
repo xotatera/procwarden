@@ -1,10 +1,12 @@
+use crate::exemption::ExemptionMatcher;
+
 /// PriorityGuard configuration, built from SettingsState each tick.
 #[derive(Debug)]
 pub struct PriorityGuardConfig {
     pub enabled: bool,
     pub cpu_threshold: f32,
     pub duration_secs: u64,
-    pub user_exemptions: Vec<String>,
+    pub exemption_matcher: ExemptionMatcher,
     /// Per-core CPU% threshold. Derived: total_cpu * core_count / threads.
     pub per_core_threshold: f32,
     /// Number of logical CPU cores (for per-core derivation).
@@ -37,8 +39,8 @@ pub const SYSTEM_EXEMPTIONS: &[&str] = &[
     "Memory Compression",
 ];
 
-/// Check if a process is exempt (self, system, or user list).
-pub fn is_exempt(pid: u32, name: &str, user_exemptions: &[String]) -> bool {
+/// Check if a process is exempt (self, system, or user-configured path+hash exemptions).
+pub fn is_exempt(pid: u32, name: &str, exemption_matcher: &ExemptionMatcher) -> bool {
     // Check if this is the current process (self-protection)
     if pid == std::process::id() {
         return true;
@@ -57,105 +59,120 @@ pub fn is_exempt(pid: u32, name: &str, user_exemptions: &[String]) -> bool {
         return true;
     }
 
-    // Check user exemptions
-    user_exemptions.iter().any(|s| s.eq_ignore_ascii_case(name))
+    // Check user-configured exemptions (path+hash based)
+    // Look up the process exe path using sysinfo
+    use sysinfo::{Pid, System};
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
+
+    let pid_sysinfo = Pid::from_u32(pid);
+    if let Some(proc) = sys.process(pid_sysinfo) {
+        if let Some(exe_path) = proc.exe() {
+            if exemption_matcher.is_exempt(exe_path) {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::exemption::ExemptionList;
+
+    fn empty_matcher() -> ExemptionMatcher {
+        ExemptionMatcher::new(ExemptionList::new())
+    }
 
     #[test]
     fn self_process_is_exempt() {
+        let matcher = empty_matcher();
         let current_pid = std::process::id();
-        assert!(is_exempt(current_pid, "anything.exe", &[]));
-        assert!(is_exempt(current_pid, "procwarden.exe", &[]));
+        assert!(is_exempt(current_pid, "anything.exe", &matcher));
+        assert!(is_exempt(current_pid, "procwarden.exe", &matcher));
     }
 
     #[test]
     fn system_process_is_exempt() {
-        assert!(is_exempt(9999, "csrss.exe", &[]));
-        assert!(is_exempt(9999, "svchost.exe", &[]));
-        assert!(is_exempt(9999, "System", &[]));
+        let matcher = empty_matcher();
+        assert!(is_exempt(9999, "csrss.exe", &matcher));
+        assert!(is_exempt(9999, "svchost.exe", &matcher));
+        assert!(is_exempt(9999, "System", &matcher));
     }
 
     #[test]
     fn system_exemption_case_insensitive() {
-        assert!(is_exempt(9999, "CSRSS.EXE", &[]));
-        assert!(is_exempt(9999, "Svchost.Exe", &[]));
-    }
-
-    #[test]
-    fn user_exemption_matches() {
-        let exemptions = vec!["myapp.exe".to_string()];
-        assert!(is_exempt(9999, "myapp.exe", &exemptions));
-    }
-
-    #[test]
-    fn user_exemption_case_insensitive() {
-        let exemptions = vec!["MyApp.exe".to_string()];
-        assert!(is_exempt(9999, "myapp.exe", &exemptions));
+        let matcher = empty_matcher();
+        assert!(is_exempt(9999, "CSRSS.EXE", &matcher));
+        assert!(is_exempt(9999, "Svchost.Exe", &matcher));
     }
 
     #[test]
     fn non_exempt_process() {
-        assert!(!is_exempt(9999, "chrome.exe", &[]));
-        assert!(!is_exempt(9999, "notepad.exe", &[]));
+        let matcher = empty_matcher();
+        assert!(!is_exempt(9999, "chrome.exe", &matcher));
+        assert!(!is_exempt(9999, "notepad.exe", &matcher));
     }
+
+    // Note: Path-based exemption tests are in exemption module tests
+    // This module only tests self/system exemption logic
 }
 
 #[cfg(test)]
 mod fuzz_tests {
     use super::*;
+    use crate::exemption::ExemptionList;
     use proptest::prelude::*;
+
+    fn empty_matcher() -> ExemptionMatcher {
+        ExemptionMatcher::new(ExemptionList::new())
+    }
 
     proptest! {
         /// Fuzz is_exempt with arbitrary process names — should never panic.
         #[test]
-        fn fuzz_is_exempt_no_panic(pid in 1u32..100000, name in "\\PC{0,100}", exemptions in prop::collection::vec("\\PC{1,30}", 0..10)) {
-            let _ = is_exempt(pid, &name, &exemptions);
+        fn fuzz_is_exempt_no_panic(pid in 1u32..100000, name in "\\PC{0,100}") {
+            let matcher = empty_matcher();
+            let _ = is_exempt(pid, &name, &matcher);
         }
 
         /// Current process PID is always exempt.
         #[test]
         fn fuzz_self_process_always_exempt(name in "\\PC{1,50}") {
+            let matcher = empty_matcher();
             let current_pid = std::process::id();
-            prop_assert!(is_exempt(current_pid, &name, &[]));
+            prop_assert!(is_exempt(current_pid, &name, &matcher));
         }
 
         /// System exemptions are always case-insensitive matches.
         #[test]
         fn fuzz_system_exemptions_case_insensitive(idx in 0..SYSTEM_EXEMPTIONS.len()) {
+            let matcher = empty_matcher();
             let name = SYSTEM_EXEMPTIONS[idx];
             let pid = 9999u32; // Non-self PID
             // Original case
-            prop_assert!(is_exempt(pid, name, &[]));
+            prop_assert!(is_exempt(pid, name, &matcher));
             // Uppercase
-            prop_assert!(is_exempt(pid, &name.to_ascii_uppercase(), &[]));
+            prop_assert!(is_exempt(pid, &name.to_ascii_uppercase(), &matcher));
             // Lowercase
-            prop_assert!(is_exempt(pid, &name.to_ascii_lowercase(), &[]));
-        }
-
-        /// User exemption lookup is case-insensitive and symmetric.
-        #[test]
-        fn fuzz_user_exemption_case_insensitive(name in "[a-zA-Z0-9_.]{1,30}") {
-            let exemptions = vec![name.clone()];
-            let pid = 9999u32;
-            prop_assert!(is_exempt(pid, &name, &exemptions));
-            prop_assert!(is_exempt(pid, &name.to_ascii_uppercase(), &exemptions));
-            prop_assert!(is_exempt(pid, &name.to_ascii_lowercase(), &exemptions));
+            prop_assert!(is_exempt(pid, &name.to_ascii_lowercase(), &matcher));
         }
 
         /// A name not in system or user exemptions returns false (unless it's self).
         #[test]
         fn fuzz_non_exempt_returns_false(name in "[a-z]{5,15}_unique_test\\.exe") {
+            let matcher = empty_matcher();
             // Use a PID that's definitely not our own
             let pid = if std::process::id() == 9999 { 8888 } else { 9999 };
             // These names are unlikely to match system exemptions
             let is_system = SYSTEM_EXEMPTIONS.iter().any(|s| s.eq_ignore_ascii_case(&name));
             if !is_system {
-                prop_assert!(!is_exempt(pid, &name, &[]));
+                prop_assert!(!is_exempt(pid, &name, &matcher));
             }
         }
+
+        // Note: Path-based exemption fuzzing is in exemption module tests
     }
 }

@@ -104,11 +104,12 @@ impl App {
         self.process_list.rebuild_formatted_rows();
 
         // Run PriorityGuard tick (hybrid detection: absolute OR per-core OR relative)
+        use crate::exemption::ExemptionMatcher;
         let pg_config = PriorityGuardConfig {
             enabled: self.settings.priority_guard_enabled,
             cpu_threshold: self.settings.priority_guard_cpu_threshold,
             duration_secs: self.settings.priority_guard_duration_secs,
-            user_exemptions: self.settings.user_exemptions.clone(),
+            exemption_matcher: ExemptionMatcher::new(self.settings.exemptions.clone()),
             per_core_threshold: self.settings.priority_guard_per_core_threshold,
             core_count: num_cpus() as u8,
             relative_multiplier: self.settings.priority_guard_relative_multiplier,

@@ -91,6 +91,7 @@ impl ExemptionList {
 }
 
 /// Matches processes against exemptions.
+#[derive(Debug, Clone)]
 pub struct ExemptionMatcher {
     exemptions: ExemptionList,
 }
