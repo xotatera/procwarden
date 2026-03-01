@@ -62,6 +62,7 @@ pub struct ProcessInfo {
     pub name: String,
     pub cpu: f32,
     pub memory: u64,
+    pub exe_path: Option<std::path::PathBuf>,
 }
 
 pub struct SettingsState {
@@ -282,6 +283,7 @@ mod tests {
                 name: name.to_string(),
                 cpu: *cpu,
                 memory: *mem,
+                exe_path: None,
             })
             .collect()
     }
@@ -404,6 +406,7 @@ mod fuzz_tests {
                 name,
                 cpu,
                 memory,
+                exe_path: None,
             },
         )
     }
@@ -442,8 +445,8 @@ mod fuzz_tests {
         ) {
             let mut state = ProcessListState::new();
             state.processes = vec![
-                ProcessInfo { pid: 1, name: "a".into(), cpu, memory },
-                ProcessInfo { pid: 2, name: "b".into(), cpu: cpu * 0.5, memory },
+                ProcessInfo { pid: 1, name: "a".into(), cpu, memory, exe_path: None },
+                ProcessInfo { pid: 2, name: "b".into(), cpu: cpu * 0.5, memory, exe_path: None },
             ];
             state.rebuild_formatted_rows();
             prop_assert_eq!(state.formatted_rows.len(), 2);

@@ -130,18 +130,21 @@ mod tests {
                 name: "alpha".into(),
                 cpu: 5.0,
                 memory: 300,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 1,
                 name: "charlie".into(),
                 cpu: 90.0,
                 memory: 100,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 5,
                 name: "bravo".into(),
                 cpu: 0.5,
                 memory: 200,
+                exe_path: None,
             },
         ]
     }
@@ -218,18 +221,21 @@ mod tests {
                 name: "Zebra.exe".into(),
                 cpu: 0.0,
                 memory: 0,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 2,
                 name: "alpha.exe".into(),
                 cpu: 0.0,
                 memory: 0,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 3,
                 name: "Beta.exe".into(),
                 cpu: 0.0,
                 memory: 0,
+                exe_path: None,
             },
         ];
         let result = sort_processes(procs, SortColumn::Name, true);
@@ -256,6 +262,7 @@ mod tests {
             name: "self".into(),
             cpu: 0.0,
             memory: 0,
+            exe_path: None,
         });
         let result = filter_processes(procs, true, "");
         assert!(result.iter().all(|p| p.pid != self_pid));
@@ -414,6 +421,7 @@ mod fuzz_tests {
                 name,
                 cpu,
                 memory,
+                exe_path: None,
             },
         )
     }
@@ -465,8 +473,8 @@ mod fuzz_tests {
         #[test]
         fn fuzz_filter_arbitrary_query_no_panic(query in "\\PC{0,100}") {
             let procs = vec![
-                ProcessInfo { pid: 1, name: "chrome.exe".into(), cpu: 1.0, memory: 100 },
-                ProcessInfo { pid: 2, name: "firefox.exe".into(), cpu: 2.0, memory: 200 },
+                ProcessInfo { pid: 1, name: "chrome.exe".into(), cpu: 1.0, memory: 100, exe_path: None },
+                ProcessInfo { pid: 2, name: "firefox.exe".into(), cpu: 2.0, memory: 200, exe_path: None },
             ];
             let _ = filter_processes(procs, false, &query);
         }

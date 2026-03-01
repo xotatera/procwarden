@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.1] - 2026-03-02
+
+### Fixed
+
+- **CRITICAL: Path-based exemptions were not working** - The exemption system added in v0.4.0 was non-functional because `is_exempt()` was called with `None` for the exe_path parameter
+  - Added `exe_path: Option<PathBuf>` field to `ProcessInfo` struct
+  - Updated both data sources (polling and ETW) to populate exe_path from `sysinfo`
+  - Fixed `PriorityGuardEngine::evaluate()` to pass `proc.exe_path` to `is_exempt()`
+  - Exempted processes are now correctly excluded from PriorityGuard actions
+- **Duplicate exemptions bug** - Users could add the same process multiple times with different hashes
+  - Modified `ExemptionList::add()` to check for existing path before adding (idempotent)
+  - Uses case-insensitive path matching on Windows
+  - Added test: `exemption_list_prevents_duplicates`
+
+### Changed
+
+- Total test count: 336 tests (added 1 new test for duplicate prevention)
+
 ## [0.4.0] - 2026-03-01
 
 ### Added

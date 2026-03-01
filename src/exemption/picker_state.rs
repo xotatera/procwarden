@@ -178,6 +178,7 @@ mod tests {
             name: "test".to_string(),
             cpu: 0.0,
             memory: 0,
+            exe_path: None,
         }];
 
         let candidates = ProcessCandidate::from_process_info(&procs);
@@ -193,6 +194,7 @@ mod tests {
             name: "test".to_string(),
             cpu: 0.0,
             memory: 0,
+            exe_path: None,
         }];
 
         state.refresh_candidates(&procs);
@@ -209,6 +211,7 @@ mod tests {
             name: "test".to_string(),
             cpu: 0.0,
             memory: 0,
+            exe_path: None,
         }];
 
         state.refresh_candidates(&procs);

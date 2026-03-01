@@ -70,6 +70,7 @@ mod tests {
                 name: format!("proc-{}", i),
                 cpu: 0.0,
                 memory: 0,
+                exe_path: None,
             })
             .collect();
         state

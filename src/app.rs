@@ -649,18 +649,21 @@ mod tests {
                 name: "alpha".into(),
                 cpu: 10.0,
                 memory: 1000,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 2,
                 name: "bravo".into(),
                 cpu: 50.0,
                 memory: 2000,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 3,
                 name: "charlie".into(),
                 cpu: 1.0,
                 memory: 500,
+                exe_path: None,
             },
         ]
     }
@@ -720,12 +723,14 @@ mod tests {
                 name: "self".into(),
                 cpu: 0.0,
                 memory: 0,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 999,
                 name: "other".into(),
                 cpu: 0.0,
                 memory: 0,
+                exe_path: None,
             },
         ];
         let mut app = make_app(procs);
@@ -813,24 +818,28 @@ mod tests {
                 name: "charlie".into(),
                 cpu: 50.0,
                 memory: 500,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 1,
                 name: "alpha".into(),
                 cpu: 10.0,
                 memory: 3000,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 2,
                 name: "bravo".into(),
                 cpu: 1.0,
                 memory: 2000,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 4,
                 name: "delta".into(),
                 cpu: 25.0,
                 memory: 1000,
+                exe_path: None,
             },
         ];
 
@@ -882,18 +891,21 @@ mod tests {
                 name: "charlie".into(),
                 cpu: 50.0,
                 memory: 500,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 1,
                 name: "alpha".into(),
                 cpu: 10.0,
                 memory: 3000,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 2,
                 name: "bravo".into(),
                 cpu: 1.0,
                 memory: 2000,
+                exe_path: None,
             },
         ]);
         app.update_processes().unwrap();
@@ -1489,18 +1501,21 @@ mod tests {
                 name: "proc1".into(),
                 cpu: 10.0,
                 memory: 1000,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 2,
                 name: "proc2".into(),
                 cpu: 20.0,
                 memory: 2000,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 3,
                 name: "proc3".into(),
                 cpu: 30.0,
                 memory: 3000,
+                exe_path: None,
             },
         ];
         let mut app = make_app(procs);
@@ -1566,18 +1581,21 @@ mod fuzz_tests {
                 name: "alpha".into(),
                 cpu: 10.0,
                 memory: 1000,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 2,
                 name: "bravo".into(),
                 cpu: 50.0,
                 memory: 2000,
+                exe_path: None,
             },
             ProcessInfo {
                 pid: 3,
                 name: "charlie".into(),
                 cpu: 1.0,
                 memory: 500,
+                exe_path: None,
             },
         ]
     }

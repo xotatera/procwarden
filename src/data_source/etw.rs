@@ -164,10 +164,10 @@ impl super::DataSource for EtwDataSource {
             (std::mem::take(&mut cs.pid_cpu_ticks), window_span)
         };
 
-        // 3. Get memory from sysinfo (memory-only refresh, skip CPU/disk)
-        let memory_map = self.poller.get_memory_only();
+        // 3. Get memory + exe_path from sysinfo (skip CPU/disk)
+        let memory_and_exe_map = self.poller.get_memory_and_exe();
 
-        // 4. Build result from names + CPU + memory
+        // 4. Build result from names + CPU + memory + exe_path
         let names = self.shared.names.lock().unwrap();
         let mut result = Vec::with_capacity(names.len());
         for (&pid, name) in names.iter() {
@@ -178,11 +178,16 @@ impl super::DataSource for EtwDataSource {
                     0.0
                 }
             });
+            let (memory, exe_path) = memory_and_exe_map
+                .get(&pid)
+                .map(|(m, p)| (*m, p.clone()))
+                .unwrap_or((0, None));
             result.push(ProcessInfo {
                 pid,
                 name: name.clone(),
                 cpu: cpu_pct as f32,
-                memory: memory_map.get(&pid).copied().unwrap_or(0),
+                memory,
+                exe_path,
             });
         }
         Ok(result)

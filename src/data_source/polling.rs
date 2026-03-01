@@ -37,6 +37,26 @@ impl PollingDataSource {
             .map(|(pid, proc)| (pid.as_u32(), proc.memory()))
             .collect()
     }
+
+    /// Refresh memory + exe info and return PID→(memory, exe_path) map.
+    pub fn get_memory_and_exe(&mut self) -> HashMap<u32, (u64, Option<std::path::PathBuf>)> {
+        self.system.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::All,
+            ProcessRefreshKind::new()
+                .with_memory()
+                .with_exe(sysinfo::UpdateKind::OnlyIfNotSet),
+        );
+        self.system
+            .processes()
+            .iter()
+            .map(|(pid, proc)| {
+                (
+                    pid.as_u32(),
+                    (proc.memory(), proc.exe().map(|p| p.to_path_buf())),
+                )
+            })
+            .collect()
+    }
 }
 
 impl DataSource for PollingDataSource {
@@ -65,6 +85,7 @@ impl DataSource for PollingDataSource {
                     name,
                     cpu: proc.cpu_usage() / self.num_cpus,
                     memory: proc.memory(),
+                    exe_path: proc.exe().map(|p| p.to_path_buf()),
                 }
             })
             .collect();

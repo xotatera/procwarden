@@ -58,7 +58,14 @@ impl ExemptionList {
     }
 
     pub fn add(&mut self, exemption: Exemption) {
-        self.exemptions.push(exemption);
+        // Check if an exemption with this path already exists
+        if !self
+            .exemptions
+            .iter()
+            .any(|e| e.matches_path(&exemption.path))
+        {
+            self.exemptions.push(exemption);
+        }
     }
 
     pub fn remove(&mut self, index: usize) -> Option<Exemption> {
@@ -232,6 +239,43 @@ mod tests {
 
         list.clear();
         assert!(list.is_empty());
+    }
+
+    #[test]
+    fn exemption_list_prevents_duplicates() {
+        let mut list = ExemptionList::new();
+        let path = PathBuf::from("C:\\app.exe");
+
+        // Add first exemption
+        list.add(Exemption::new(
+            path.clone(),
+            "sha1".to_string(),
+            "blake1".to_string(),
+        ));
+        assert_eq!(list.len(), 1);
+
+        // Try to add same path again (should be ignored)
+        list.add(Exemption::new(
+            path.clone(),
+            "sha2".to_string(),
+            "blake2".to_string(),
+        ));
+        assert_eq!(list.len(), 1, "Duplicate exemption should not be added");
+
+        #[cfg(windows)]
+        {
+            // Try case-insensitive duplicate (Windows)
+            list.add(Exemption::new(
+                PathBuf::from("c:\\app.exe"),
+                "sha3".to_string(),
+                "blake3".to_string(),
+            ));
+            assert_eq!(
+                list.len(),
+                1,
+                "Case-insensitive duplicate should not be added on Windows"
+            );
+        }
     }
 
     #[test]

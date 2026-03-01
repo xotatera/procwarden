@@ -155,8 +155,12 @@ impl PriorityGuardEngine {
         let mut pending_history: Vec<u32> = Vec::new();
 
         for proc in processes {
-            // TODO: Look up exe paths once per tick and pass here to avoid per-process lookups
-            if is_exempt(proc.pid, &proc.name, &config.exemption_matcher, None) {
+            if is_exempt(
+                proc.pid,
+                &proc.name,
+                &config.exemption_matcher,
+                proc.exe_path.as_deref(),
+            ) {
                 continue;
             }
 
@@ -395,6 +399,7 @@ mod tests {
             name: name.to_string(),
             cpu,
             memory: 0,
+            exe_path: None,
         }
     }
 
@@ -652,6 +657,7 @@ mod fuzz_tests {
                 name,
                 cpu,
                 memory: mem,
+                exe_path: None,
             },
         )
     }
@@ -745,7 +751,7 @@ mod fuzz_tests {
         #[test]
         fn fuzz_exempt_never_tracked(idx in 0..super::super::config::SYSTEM_EXEMPTIONS.len()) {
             let name = super::super::config::SYSTEM_EXEMPTIONS[idx];
-            let procs = vec![ProcessInfo { pid: 1, name: name.to_string(), cpu: 99.0, memory: 0 }];
+            let procs = vec![ProcessInfo { pid: 1, name: name.to_string(), cpu: 99.0, memory: 0, exe_path: None }];
             let config = PriorityGuardConfig {
                 enabled: true,
                 cpu_threshold: 1.0,

@@ -9,6 +9,7 @@ fn make_procs(n: usize) -> Vec<ProcessInfo> {
             name: format!("process-{}", i),
             cpu: (i as f32) * 0.5,
             memory: (i as u64) * 1024 * 1024,
+            exe_path: None,
         })
         .collect()
 }
